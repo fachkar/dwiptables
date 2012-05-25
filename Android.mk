@@ -17,6 +17,7 @@ LOCAL_SRC_FILES:=                                      \
                   SoftapController.cpp                 \
                   TetherController.cpp                 \
                   ThrottleController.cpp               \
+                  oem_iptables_hook.cpp                \
                   logwrapper.c                         \
                   main.cpp                             \
 
@@ -43,6 +44,10 @@ endif
 ifeq ($(BOARD_HAVE_BLUETOOTH),true)
   LOCAL_SHARED_LIBRARIES := $(LOCAL_SHARED_LIBRARIES) libbluedroid
   LOCAL_CFLAGS := $(LOCAL_CFLAGS) -DHAVE_BLUETOOTH
+endif
+
+ifeq ($(BOARD_WIFI_VENDOR), realtek)
+	LOCAL_CFLAGS += -DRTL_WIFI_VENDOR
 endif
 
 include $(BUILD_EXECUTABLE)

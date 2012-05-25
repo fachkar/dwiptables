@@ -291,10 +291,33 @@ int SoftapController::setSoftap(int argc, char *argv[]) {
     } else {
         ssid = (char *)"AndroidAP";
     }
-
+#ifndef RTL_WIFI_VENDOR
     asprintf(&wbuf, "interface=%s\ndriver=nl80211\nctrl_interface="
             "/data/misc/wifi/hostapd\nssid=%s\nchannel=6\n", iface, ssid);
+#else
+	asprintf(&wbuf,	"interface=%s\n"
+					"driver=%s\n"
+					"ctrl_interface=%s\n"
+					"ssid=%s\n"
+					"channel=%d\n"
 
+					"hw_mode=g\n"
+					"ieee80211n=1\n"
+					"wme_enabled=1\n"
+					"ht_capab=[SHORT-GI-20][SHORT-GI-40][HT40+]\n"
+
+					"max_num_sta=%d\n"
+					"wpa_group_rekey=%d\n"
+					
+					, iface //interface
+					, "nl80211" //driver
+					, "/data/misc/wifi/hostapd" //ctrl_interface
+					, ssid //ssid
+					, 6 //channel
+					, 8 //max_num_sta
+					, 86400 //wpa_group_rekey
+	);
+#endif
     if (argc > 5) {
         if (!strcmp(argv[5], "wpa-psk")) {
             generatePsk(ssid, argv[6], psk_str);
