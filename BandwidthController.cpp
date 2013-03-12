@@ -64,7 +64,7 @@ bool BandwidthController::useLogwrapCall = false;
  * Some comments about the rules:
  *  * Ordering
  *    - when an interface is marked as costly it should be INSERTED into the INPUT/OUTPUT chains.
- *      E.g. "-I INPUT -i rmnet0 --goto costly"
+ *      E.g. "-I INPUT -i ppp0 --goto costly"
  *    - quota'd rules in the costly chain should be before penalty_box lookups.
  *
  * * global quota vs per interface quota
