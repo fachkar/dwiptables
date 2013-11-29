@@ -188,6 +188,7 @@ int BandwidthController::runIptablesCmd(const char *cmd, IptRejectOp rejectHandl
 
     if (!useLogwrapCall) {
         res = system_nosh(fullCmd.c_str());
+        LOGD(" -- -- runIptablesCmd (%s)", fullCmd.c_str());
     } else {
         if (StrncpyAndCheck(buffer, fullCmd.c_str(), sizeof(buffer))) {
             LOGE("iptables command too long");
@@ -364,7 +365,7 @@ std::string BandwidthController::makeIptablesQuotaCmd(IptOp op, const char *cost
 int BandwidthController::prepCostlyIface(const char *ifn, QuotaType quotaType) {
     char cmd[MAX_CMD_LEN];
     int res = 0;
-    int ruleInsertPos = 1;
+    int ruleInsertPos = 2;
     std::string costString;
     const char *costCString;
 
@@ -393,7 +394,7 @@ int BandwidthController::prepCostlyIface(const char *ifn, QuotaType quotaType) {
 
     if (globalAlertBytes) {
         /* The alert rule comes 1st */
-        ruleInsertPos = 2;
+        ruleInsertPos = 3;
     }
     snprintf(cmd, sizeof(cmd), "-I INPUT %d -i %s --goto %s", ruleInsertPos, ifn, costCString);
     res |= runIpxtablesCmd(cmd, IptRejectNoAdd);

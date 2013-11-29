@@ -53,6 +53,7 @@ int ThrottleController::runTcCmd(const char *cmd) {
     }
 
     asprintf(&buffer, "%s %s", TC_PATH, cmd);
+    if(buffer != NULL)LOGD("-- --  runTcCmd (%s)", buffer);
     res = system_nosh(buffer);
     free(buffer);
     return res;

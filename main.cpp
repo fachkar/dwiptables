@@ -33,6 +33,7 @@
 #include "CommandListener.h"
 #include "NetlinkManager.h"
 #include "DnsProxyListener.h"
+#include "OEMListener.h"
 
 static void coldboot(const char *path);
 static void sigchld_handler(int sig);
@@ -42,6 +43,7 @@ int main() {
     CommandListener *cl;
     NetlinkManager *nm;
     DnsProxyListener *dpl;
+    OEMListener *oeml;
 
     LOGI("Netd 1.0 starting");
 
@@ -69,6 +71,8 @@ int main() {
         LOGE("Unable to start DnsProxyListener (%s)", strerror(errno));
         exit(1);
     }
+
+    oeml = new OEMListener();
 
     /*
      * Now that we're up, we can respond to commands

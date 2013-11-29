@@ -56,6 +56,7 @@ int NatController::runCmd(const char *path, const char *cmd) {
     }
 
     asprintf(&buffer, "%s %s", path, cmd);
+    if(buffer != NULL) LOGD(" -- -- runNatCmd (%s)", buffer);
     res = system_nosh(buffer);
     free(buffer);
     return res;

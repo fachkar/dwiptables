@@ -138,6 +138,7 @@ int SecondaryTableController::runAndFree(SocketClient *cli, char *cmd) {
         return -1;
     }
     ret = system_nosh(cmd);
+    if(cmd != NULL)LOGD(" -- -- runSecTablCmd (%s)", cmd);
     free(cmd);
     return ret;
 }

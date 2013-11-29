@@ -6,6 +6,7 @@ LOCAL_SRC_FILES:=                                      \
                   BandwidthController.cpp              \
                   CommandListener.cpp                  \
                   DnsProxyListener.cpp                 \
+                  OEMListener.cpp                 \
                   NatController.cpp                    \
                   NetdCommand.cpp                      \
                   NetlinkHandler.cpp                   \
@@ -29,11 +30,12 @@ LOCAL_C_INCLUDES := $(KERNEL_HEADERS) \
                     $(LOCAL_PATH)/../bluetooth/bluez-clean-headers \
                     external/openssl/include \
                     external/stlport/stlport \
+                    external/curl/include \
                     bionic \
                     $(call include-path-for, libhardware_legacy)/hardware_legacy
 
 LOCAL_CFLAGS :=
-
+LOCAL_STATIC_LIBRARIES := libcurl
 LOCAL_SHARED_LIBRARIES := libstlport libsysutils libcutils libnetutils \
                           libcrypto libhardware_legacy
 
@@ -60,7 +62,7 @@ LOCAL_MODULE:= ndc
 
 LOCAL_C_INCLUDES := $(KERNEL_HEADERS)
 
-LOCAL_CFLAGS := 
+LOCAL_CFLAGS :=
 
 LOCAL_SHARED_LIBRARIES := libcutils
 
