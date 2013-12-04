@@ -191,7 +191,6 @@ int BandwidthController::runIptablesCmd(const char *cmd, IptRejectOp rejectHandl
 
     if (!useLogwrapCall) {
         res = system_nosh(fullCmd.c_str());
-        LOGD(" -- -- runIptablesCmd (%s)", fullCmd.c_str());
     } else {
         if (StrncpyAndCheck(buffer, fullCmd.c_str(), sizeof(buffer))) {
             LOGE("iptables command too long");
@@ -664,6 +663,7 @@ int BandwidthController::removeInterfaceQuota(const char *iface) {
 int BandwidthController::updateQuota(const char *quotaName, int64_t bytes) {
     FILE *fp;
     char *fname;
+
 
     asprintf(&fname, "/proc/net/xt_quota/%s", quotaName);
     fp = fopen(fname, "w");

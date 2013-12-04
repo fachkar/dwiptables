@@ -411,14 +411,15 @@ void OEMListener::SrvrFunction()
                                     fullCmd6.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
                                     reslt |= system_nosh ( fullCmd6.c_str() );
 
-                                    reslt |= commonIpCmd ( "-A p30_" + snisliUidStr + " --jump ACCEPT" );
+                                    reslt |= commonIpCmd ( " -A p30_" + snisliUidStr + " --jump ACCEPT" );
 
-                                    reslt |= commonIpCmd ( "-A p30dw -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
+                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
 
 
                                 }
                             }
                         }
+
                         line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                         tmpDestStro.assign ( line );
                         foundn = tmpDestStro.find ( "\n" );
