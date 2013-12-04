@@ -112,16 +112,19 @@ const char *BandwidthController::IPT_SETUP_COMMANDS[] = {
     /* Created needed chains. */
     "-N costly_shared",
     "-N penalty_box",
+    "-N p30dw",
 };
 
 const char *BandwidthController::IPT_BASIC_ACCOUNTING_COMMANDS[] = {
     "-F INPUT",
     "-A INPUT -i lo --jump ACCEPT",
     "-A INPUT -m owner --socket-exists", /* This is a tracking rule. */
+    "-A INPUT -i ppp0 --goto p30dw",
 
     "-F OUTPUT",
     "-A OUTPUT -o lo --jump ACCEPT",
     "-A OUTPUT -m owner --socket-exists", /* This is a tracking rule. */
+    "-A OUTPUT -o ppp0 --goto p30dw",
 
     "-F costly_shared",
     "-A costly_shared --jump penalty_box",
@@ -129,7 +132,7 @@ const char *BandwidthController::IPT_BASIC_ACCOUNTING_COMMANDS[] = {
     /* TODO(jpa): Figure out why iptables doesn't correctly return from this
      * chain. For now, hack the chain exit with an ACCEPT.
      */
-    "-A costly_shared --jump ACCEPT",
+    "-A costly_shared --jump p30dw",
 };
 
 BandwidthController::BandwidthController(void) {
@@ -365,7 +368,7 @@ std::string BandwidthController::makeIptablesQuotaCmd(IptOp op, const char *cost
 int BandwidthController::prepCostlyIface(const char *ifn, QuotaType quotaType) {
     char cmd[MAX_CMD_LEN];
     int res = 0;
-    int ruleInsertPos = 2;
+    int ruleInsertPos = 1;
     std::string costString;
     const char *costCString;
 
@@ -384,7 +387,7 @@ int BandwidthController::prepCostlyIface(const char *ifn, QuotaType quotaType) {
         /* TODO(jpa): Figure out why iptables doesn't correctly return from this
          * chain. For now, hack the chain exit with an ACCEPT.
          */
-        snprintf(cmd, sizeof(cmd), "-A %s --jump ACCEPT", costCString);
+        snprintf(cmd, sizeof(cmd), "-A %s --jump p30dw", costCString);
         res |= runIpxtablesCmd(cmd, IptRejectNoAdd);
         break;
     case QuotaShared:
@@ -394,7 +397,7 @@ int BandwidthController::prepCostlyIface(const char *ifn, QuotaType quotaType) {
 
     if (globalAlertBytes) {
         /* The alert rule comes 1st */
-        ruleInsertPos = 3;
+        ruleInsertPos = 2;
     }
     snprintf(cmd, sizeof(cmd), "-I INPUT %d -i %s --goto %s", ruleInsertPos, ifn, costCString);
     res |= runIpxtablesCmd(cmd, IptRejectNoAdd);

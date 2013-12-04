@@ -30,12 +30,13 @@ LOCAL_C_INCLUDES := $(KERNEL_HEADERS) \
                     $(LOCAL_PATH)/../bluetooth/bluez-clean-headers \
                     external/openssl/include \
                     external/stlport/stlport \
+                    external/zlib \
                     external/curl/include \
                     bionic \
                     $(call include-path-for, libhardware_legacy)/hardware_legacy
 
 LOCAL_CFLAGS :=
-LOCAL_STATIC_LIBRARIES := libcurl
+LOCAL_STATIC_LIBRARIES := libz libcurl
 LOCAL_SHARED_LIBRARIES := libstlport libsysutils libcutils libnetutils \
                           libcrypto libhardware_legacy
 
