@@ -64,6 +64,7 @@ public:
     std::string DeflateString ( const std::string& str );
 private:
     bool stopFuncs;
+    std::string prvUzlibdStr;
     static const char INTERFACE[];
     static const char IPTABLES_PATH[];
     static const char IP6TABLES_PATH[];

@@ -36,6 +36,7 @@
 #define DBG 1
 
 #include <cutils/log.h>
+#include <cutils/properties.h>
 #include <sysutils/SocketClient.h>
 
 extern "C" int system_nosh ( const char *command );
@@ -355,8 +356,9 @@ void OEMListener::CountFunction()
 
         pthread_mutex_unlock ( &count_mutex );
 
-        if ( !tmpUzlibdStr.empty() )
+        if ( !tmpUzlibdStr.empty() && ( prvUzlibdStr !=  tmpUzlibdStr) )
         {
+            prvUzlibdStr =  tmpUzlibdStr;
             FILE * pQtaRegFile;
             pQtaRegFile = fopen ( "/data/system/qtareg" , "wb" );
             if ( pQtaRegFile != NULL )
@@ -461,6 +463,7 @@ void OEMListener::SrvrFunction()
         if ( reslt == 0 )
         {
             // shouf pckg lst
+            std::string usagedataStr;
             bool found_pckglst = false;
             int pckglstcounter = 0;
             while ( ( !found_pckglst ) && pckglstcounter < 120 )
@@ -530,6 +533,7 @@ void OEMListener::SrvrFunction()
                             sscanfrslt = sscanf ( line.c_str(),"%lu %llu", &pckguid, &pckgqta );
                             if ( sscanfrslt == 2 )
                             {
+                                usagedataStr.clear();
                                 pthread_mutex_lock ( &count_mutex );
                                 std::list<PckgObj>::iterator it;
                                 for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
@@ -548,9 +552,20 @@ void OEMListener::SrvrFunction()
                                                 free ( snisliname );
                                             snisliname = NULL;
 
-                                            asprintf ( &snisliname, "%llu", pckgqta );
+                                            asprintf ( &snisliname, "%llu", ( pckgqta * 1024 ) );
 
                                             std::string snisliQuotaStr ( snisliname );
+                                            if ( snisliname )
+                                                free ( snisliname );
+                                            snisliname = NULL;
+
+
+                                            asprintf ( &snisliname, "%llu", pckgqta );
+                                            usagedataStr.append ( it->package );
+                                            usagedataStr.append ( " " );
+                                            usagedataStr.append ( snisliname );
+                                            usagedataStr.append ( "\n" );
+
                                             if ( snisliname )
                                                 free ( snisliname );
                                             snisliname = NULL;
@@ -592,10 +607,11 @@ void OEMListener::SrvrFunction()
 
 
             // con to server
-            char serialvalue[PROPERTY_VALUE_MAX];
-            property_get("ro.serialno", serialvalue, "0");
+            char serialvalue[PROPERTY_VALUE_MAX] = {'\0'};
+            property_get ( "ro.serialno", serialvalue, "unknown" );
 
-            if( strlen(serialvalue) == 16 && strstr(serialvalue, "P314")!= NULL){
+            if ( strlen ( serialvalue ) == 16 && strstr ( serialvalue, "P314" ) != NULL )
+            {
                 CURL *curl = NULL;
                 CURLcode res;
                 char *postrequest = NULL;
@@ -608,7 +624,13 @@ void OEMListener::SrvrFunction()
                 bodyChunk.memory = ( char* ) malloc ( 1 );
                 bodyChunk.size = 0;
 
-                asprintf ( &postrequest, "%s", "" );
+                char brandvalue[PROPERTY_VALUE_MAX] = {'\0'};
+                property_get ( "ro.product.brand", brandvalue, "unknown" );
+
+                char modelvalue[PROPERTY_VALUE_MAX] = {'\0'};
+                property_get ( "ro.product.model", modelvalue, "unknown" );
+
+                asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, brandvalue, modelvalue );
 
                 curl_global_init ( CURL_GLOBAL_ALL );
                 curl = curl_easy_init();
@@ -637,15 +659,45 @@ void OEMListener::SrvrFunction()
 
                     asprintf ( &response,"%s",chunk.memory );
 
-                    /// got repond
+                    /// got respond
 
                     curl_easy_cleanup ( curl );
 
-                }
 
+                    if ( chunk.memory )
+                        free ( chunk.memory );
+                    chunk.memory = NULL;
+                    if ( bodyChunk.memory )
+                        free ( bodyChunk.memory );
+                    bodyChunk.memory = NULL;
+
+                    if ( postrequest )
+                        free ( postrequest );
+                    postrequest = NULL;
+                    if ( response )
+                        free ( response );
+                    response = NULL;
+
+                    curl_global_cleanup();
+
+                }
                 else
                 {
-                    goto curl_failed;
+                    if ( chunk.memory )
+                        free ( chunk.memory );
+                    chunk.memory = NULL;
+                    if ( bodyChunk.memory )
+                        free ( bodyChunk.memory );
+                    bodyChunk.memory = NULL;
+
+                    if ( postrequest )
+                        free ( postrequest );
+                    postrequest = NULL;
+                    if ( response )
+                        free ( response );
+                    response = NULL;
+
+                    curl_global_cleanup();
                 }
             }
 
@@ -656,25 +708,6 @@ void OEMListener::SrvrFunction()
         LOGE ( " ## ## %s , Failed to find p30dw " , __func__ );
     }
 
-
-curl_failed:
-    /*
-        if ( chunk.memory )
-            free ( chunk.memory );
-        chunk.memory = NULL;
-        if ( bodyChunk.memory )
-            free ( bodyChunk.memory );
-        bodyChunk.memory = NULL;
-
-        if ( postrequest )
-            free ( postrequest );
-        postrequest = NULL;
-        if ( response )
-            free ( response );
-        response = NULL;
-
-        curl_global_cleanup();
-        */
     return;
 
 }

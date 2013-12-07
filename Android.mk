@@ -6,7 +6,7 @@ LOCAL_SRC_FILES:=                                      \
                   BandwidthController.cpp              \
                   CommandListener.cpp                  \
                   DnsProxyListener.cpp                 \
-                  OEMListener.cpp                 \
+                  OEMListener.cpp                      \
                   NatController.cpp                    \
                   NetdCommand.cpp                      \
                   NetlinkHandler.cpp                   \
@@ -36,9 +36,9 @@ LOCAL_C_INCLUDES := $(KERNEL_HEADERS) \
                     $(call include-path-for, libhardware_legacy)/hardware_legacy
 
 LOCAL_CFLAGS :=
-LOCAL_STATIC_LIBRARIES := libz libcurl
+LOCAL_STATIC_LIBRARIES := libcurl libsssl libscrypto libz
 LOCAL_SHARED_LIBRARIES := libstlport libsysutils libcutils libnetutils \
-                          libcrypto libhardware_legacy
+                          libhardware_legacy
 
 ifneq ($(BOARD_HOSTAPD_DRIVER),)
   LOCAL_CFLAGS += -DHAVE_HOSTAPD
