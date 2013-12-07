@@ -27,9 +27,9 @@
 class PckgObj
 {
 public:
-    PckgObj ( std::string pckgname = "", unsigned int puid = 0, unsigned long long qta = 0 , unsigned short statuso = 0) :package ( pckgname ),uid ( puid ),clq ( qta ), status(statuso) {}
-    ~PckgObj(){}
-    PckgObj ( const PckgObj& cctor ) :package ( cctor.package ),uid ( cctor.uid ),clq ( cctor.clq ), status(cctor.status) {}
+    PckgObj ( std::string pckgname = "", unsigned int puid = 0, unsigned long long qta = 0 ) :package ( pckgname ),uid ( puid ),clq ( qta ){}
+    ~PckgObj() {}
+    PckgObj ( const PckgObj& cctor ) :package ( cctor.package ),uid ( cctor.uid ),clq ( cctor.clq ){}
     PckgObj& operator= ( const PckgObj& assign_opt )
     {
         if ( this == &assign_opt )
@@ -37,14 +37,12 @@ public:
         package = assign_opt.package;
         uid = assign_opt.uid;
         clq = assign_opt.clq;
-        status = assign_opt.status;
         return *this;
     }
 
     std::string package;
     unsigned int uid;
     unsigned long long clq;
-    unsigned short status;
 };
 
 
@@ -52,17 +50,24 @@ class OEMListener
 {
 public:
     OEMListener();
-    virtual ~OEMListener() {mPckgObjLst.clear();}
+    virtual ~OEMListener()
+    {
+        stopFuncs = true;
+        mPckgObjLst.clear();
+    }
     void SrvrFunction();
+    void CountFunction();
     void wait_for_SrvrExit();
     int commonIpCmd ( std:: string cmd );
-    int infStr(FILE *source, std::string& rtrnStr);
+    int infStr ( FILE *source, std::string& rtrnStr );
+    int defStr ( std::string srcStr, FILE *dest );
     std::string DeflateString ( const std::string& str );
 private:
+    bool stopFuncs;
     static const char INTERFACE[];
     static const char IPTABLES_PATH[];
     static const char IP6TABLES_PATH[];
-    pthread_t mSrvrThread;
+    pthread_t mSrvrThread, mCountThread;
     std::list<PckgObj> mPckgObjLst;
 };
 

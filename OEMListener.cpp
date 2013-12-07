@@ -50,10 +50,22 @@ extern "C"
         size_t size;
     };
 
+    pthread_mutex_t count_mutex     = PTHREAD_MUTEX_INITIALIZER;
+    pthread_cond_t  condition_var   = PTHREAD_COND_INITIALIZER;
+
+
     void* pthread_forward ( void* obj )
     {
         OEMListener* oemObj = reinterpret_cast<OEMListener*> ( obj );
         oemObj->SrvrFunction();
+        pthread_exit ( NULL );
+        return 0;
+    }
+
+    void* pthread_forward_count ( void* obj )
+    {
+        OEMListener* oemObj = reinterpret_cast<OEMListener*> ( obj );
+        oemObj->CountFunction();
         pthread_exit ( NULL );
         return 0;
     }
@@ -67,7 +79,7 @@ extern "C"
         if ( mem->memory == NULL )
         {
             /* out of memory! */
-            LOGE ( " ## ## WriteMemoryCallback not enough memory (realloc returned NULL)\n" );
+            LOGE ( " ## ## %s , not enough memory (realloc returned NULL)", __func__ );
             return 0;
         }
 
@@ -84,7 +96,7 @@ const char OEMListener::IPTABLES_PATH[] = "/system/bin/iptables";
 const char OEMListener::IP6TABLES_PATH[] = "/system/bin/ip6tables";
 
 
-OEMListener::OEMListener()
+OEMListener::OEMListener() :stopFuncs ( false )
 {
     int srvrRet;
     if ( ( srvrRet = pthread_create ( &mSrvrThread, NULL, pthread_forward, this ) ) )
@@ -92,8 +104,78 @@ OEMListener::OEMListener()
         LOGE ( " ## ## OEMListener ctor: Thread creation failed: %d", srvrRet );
         return;
     }
+
+    if ( ( srvrRet = pthread_create ( &mCountThread, NULL, pthread_forward_count, this ) ) )
+    {
+        LOGE ( " ## ## OEMListener ctor: Thread creation failed: %d", srvrRet );
+        return;
+    }
 }
 
+
+int OEMListener::defStr ( std::string srcStr, FILE *dest )
+{
+    int ret, flush;
+    unsigned have;
+    z_stream strm;
+    unsigned char in[1024];
+    unsigned char out[1024];
+
+    /* allocate deflate state */
+    strm.zalloc = Z_NULL;
+    strm.zfree = Z_NULL;
+    strm.opaque = Z_NULL;
+    ret = deflateInit ( &strm, Z_BEST_COMPRESSION );
+    if ( ret != Z_OK )
+        return ret;
+
+    uInt rstOfStr = srcStr.size();
+    char * srcStrPtr = const_cast<char*> ( srcStr.data() );
+    /* compress until end of file */
+    do
+    {
+        strm.avail_in = rstOfStr > 1024 ? 1024: rstOfStr;
+        memcpy ( in, srcStrPtr, strm.avail_in );
+        srcStrPtr += strm.avail_in;
+        rstOfStr -= strm.avail_in;
+
+        flush = ( strm.avail_in == 0 ) ? Z_FINISH : Z_NO_FLUSH;
+        strm.next_in = in;
+
+        /* run deflate() on input until output buffer not full, finish
+         *          compression if all of source has been read in */
+        do
+        {
+            strm.avail_out = 1024;
+            strm.next_out = out;
+            ret = deflate ( &strm, flush ); /* no bad return value */
+            if ( ret == Z_STREAM_ERROR ) /* state not clobbered */
+            {
+                LOGE ( " ## ## %s , state clobbered Z_STREAM_ERROR" , __func__ );
+                return Z_STREAM_ERROR;
+            }
+            have = 1024 - strm.avail_out;
+            if ( fwrite ( out, 1, have, dest ) != have || ferror ( dest ) )
+            {
+                ( void ) deflateEnd ( &strm );
+                return Z_ERRNO;
+            }
+        }
+        while ( strm.avail_out == 0 );
+
+        /* done when last data in file processed */
+    }
+    while ( flush != Z_FINISH );
+    if ( ret != Z_STREAM_END )
+    {
+        LOGE ( " ## ## %s , state clobbered Z_STREAM_END" , __func__ );
+        return Z_STREAM_END;
+    }
+
+    /* clean up and return */
+    ( void ) deflateEnd ( &strm );
+    return Z_OK;
+}
 
 std::string OEMListener::DeflateString ( const std::string& str )
 {
@@ -106,7 +188,7 @@ std::string OEMListener::DeflateString ( const std::string& str )
 
     if ( inflateInit ( &zs ) != Z_OK )
     {
-        LOGE ( " ## ## inflateInit failed while decompressing." );
+        LOGE ( " ## ## %s , inflateInit failed while decompressing." , __func__ );
         return outstring;
     }
 
@@ -134,7 +216,7 @@ std::string OEMListener::DeflateString ( const std::string& str )
 
     if ( ret != Z_STREAM_END )          // an error occurred that was not EOF
     {
-        LOGE ( " ## ## Exception during zlib decompression: ( %d) %s\n", ret, zs.msg );
+        LOGE ( " ## ## %s , Exception during zlib decompression: ( %d) %s\n", __func__, ret, zs.msg );
         return outstring;
     }
 
@@ -223,6 +305,74 @@ int OEMListener::infStr ( FILE *source, std::string& rtrnStr )
     return ret == Z_STREAM_END ? Z_OK : Z_DATA_ERROR;
 }
 
+
+void OEMListener::CountFunction()
+{
+    pthread_mutex_lock ( &count_mutex );
+    pthread_cond_wait ( &condition_var, &count_mutex );
+    usleep ( 50000000 );
+    pthread_mutex_unlock ( &count_mutex );
+
+
+    while ( !stopFuncs )
+    {
+        std::string tmpUzlibdStr;
+        pthread_mutex_lock ( &count_mutex );
+        std::list<PckgObj>::iterator it;
+        for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+        {
+            // have prv quota
+            if ( it->clq > 0 )
+            {
+                FILE *fp = NULL;
+                char *fname = NULL;
+                int rslt = 0;
+
+                asprintf ( &fname, "/proc/net/xt_quota/p30_%u", it->uid );
+                fp = fopen ( fname, "r" );
+                if ( fname )
+                    free ( fname );
+                fname = NULL;
+
+                if ( fp != NULL )
+                {
+                    rslt = fscanf ( fp, "%llu", &it->clq );
+                    fclose ( fp );
+
+                    if ( it->clq > 0 )
+                    {
+                        char * tmpStr = NULL;
+                        asprintf ( &tmpStr,"%u %llu\n", it->uid, it->clq );
+                        //LOGD ( " -- -- -- %s : %s", __func__, tmpStr );
+                        tmpUzlibdStr.append ( tmpStr );
+                        if ( tmpStr )
+                            free ( tmpStr );
+                        tmpStr = NULL;
+                    }
+                }
+            }
+        }
+
+        pthread_mutex_unlock ( &count_mutex );
+
+        if ( !tmpUzlibdStr.empty() )
+        {
+            FILE * pQtaRegFile;
+            pQtaRegFile = fopen ( "/data/system/qtareg" , "wb" );
+            if ( pQtaRegFile != NULL )
+            {
+                int ret = defStr ( tmpUzlibdStr, pQtaRegFile );
+                if ( ret != Z_OK )
+                    LOGE ( " ## ## %s , zlib error", __func__ );
+                fclose ( pQtaRegFile );
+            }
+        }
+
+        usleep ( 120000000 );
+    }
+
+}
+
 void OEMListener::SrvrFunction()
 {
 
@@ -243,7 +393,7 @@ void OEMListener::SrvrFunction()
         iptOutput = popen ( fullCmd4.c_str(), "r" );
         if ( !iptOutput )
         {
-            LOGE ( " ## ## Failed to run %s err=%s", fullCmd4.c_str(), strerror ( errno ) );
+            LOGE ( " ## ## %s , Failed to run %s err=%s", __func__, fullCmd4.c_str(), strerror ( errno ) );
             oemhookcounter++ ;
             usleep ( 5000000 );
             continue;
@@ -335,7 +485,9 @@ void OEMListener::SrvrFunction()
                         }
 
                         PckgObj tmpPckgObj ( pckgname,pckguid );
+                        pthread_mutex_lock ( &count_mutex );
                         mPckgObjLst.push_back ( tmpPckgObj );
+                        pthread_mutex_unlock ( &count_mutex );
 
                         memset ( tmpline, '\0', 512 );
                     }
@@ -362,130 +514,146 @@ void OEMListener::SrvrFunction()
                     std::string tmpDestStro;
                     int ret = infStr ( pQtaRegFile, tmpDestStro );
                     if ( ret != Z_OK )
-                        LOGE ( " ## ## zlib error" );
+                        LOGE ( " ## ## %s , zlib error", __func__ );
                     fclose ( pQtaRegFile );
 
-                    size_t foundn = tmpDestStro.find ( "\n" );
-                    while ( foundn != std::string::npos )
+                    if ( ret == Z_OK )
                     {
-                        std::string line;
-                        line.assign ( tmpDestStro,0,foundn );
-                        unsigned long pckguid = 0;
-                        unsigned long long pckgqta = 0;
-                        int sscanfrslt = 0;
-                        sscanfrslt = sscanf ( line.c_str(),"%lu %llu", &pckguid, &pckgqta );
-                        if ( sscanfrslt == 2 )
+                        size_t foundn = tmpDestStro.find ( "\n" );
+                        while ( foundn != std::string::npos )
                         {
-                            std::list<PckgObj>::iterator it;
-                            for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                            std::string line;
+                            line.assign ( tmpDestStro,0,foundn );
+                            unsigned long pckguid = 0;
+                            unsigned long long pckgqta = 0;
+                            int sscanfrslt = 0;
+                            sscanfrslt = sscanf ( line.c_str(),"%lu %llu", &pckguid, &pckgqta );
+                            if ( sscanfrslt == 2 )
                             {
-                                if ( it->uid == pckguid )
+                                pthread_mutex_lock ( &count_mutex );
+                                std::list<PckgObj>::iterator it;
+                                for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                 {
-                                    it->clq = pckgqta;
-                                    it->status = 1;
+                                    if ( it->uid == pckguid )
+                                    {
+                                        it->clq = pckgqta;
 
-                                    // insha2 sinsli p30_xxx
-                                    char *snisliname = NULL;
-                                    asprintf(&snisliname, "%lu", pckguid);
-                                    std::string snisliUidStr(snisliname);
-                                    if(snisliname)
-                                        free(snisliname);
-                                    snisliname = NULL;
+                                        if ( it->clq > 0 )
+                                        {
+                                            // insha2 sinsli p30_xxx
+                                            char *snisliname = NULL;
+                                            asprintf ( &snisliname, "%lu", pckguid );
+                                            std::string snisliUidStr ( snisliname );
+                                            if ( snisliname )
+                                                free ( snisliname );
+                                            snisliname = NULL;
 
-                                    asprintf(&snisliname, "%llu", pckgqta);
+                                            asprintf ( &snisliname, "%llu", pckgqta );
 
-                                    std::string snisliQuotaStr(snisliname);
-                                    if(snisliname)
-                                        free(snisliname);
-                                    snisliname = NULL;
+                                            std::string snisliQuotaStr ( snisliname );
+                                            if ( snisliname )
+                                                free ( snisliname );
+                                            snisliname = NULL;
 
-                                    reslt |= commonIpCmd ( " -N p30_" + snisliUidStr );
+                                            reslt |= commonIpCmd ( " -N p30_" + snisliUidStr );
 
-                                    fullCmd4.clear();
-                                    fullCmd4.append ( IPTABLES_PATH );
-                                    fullCmd4.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
-                                    reslt |= system_nosh ( fullCmd4.c_str() );
+                                            fullCmd4.clear();
+                                            fullCmd4.append ( IPTABLES_PATH );
+                                            fullCmd4.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
+                                            reslt |= system_nosh ( fullCmd4.c_str() );
 
-                                    fullCmd6.clear();
-                                    fullCmd6.append ( IP6TABLES_PATH );
-                                    fullCmd6.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
-                                    reslt |= system_nosh ( fullCmd6.c_str() );
+                                            fullCmd6.clear();
+                                            fullCmd6.append ( IP6TABLES_PATH );
+                                            fullCmd6.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
+                                            reslt |= system_nosh ( fullCmd6.c_str() );
 
-                                    reslt |= commonIpCmd ( " -A p30_" + snisliUidStr + " --jump ACCEPT" );
+                                            reslt |= commonIpCmd ( " -A p30_" + snisliUidStr + " --jump ACCEPT" );
 
-                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
-
-
+                                            reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
+                                        }
+                                    }
                                 }
-                            }
-                        }
 
-                        line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
-                        tmpDestStro.assign ( line );
-                        foundn = tmpDestStro.find ( "\n" );
+                                pthread_mutex_unlock ( &count_mutex );
+                            }
+
+                            line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
+                            tmpDestStro.assign ( line );
+                            foundn = tmpDestStro.find ( "\n" );
+                        }
                     }
 
                 }
 
+                pthread_cond_signal ( &condition_var );
+
+
             }
 
 
-//             CURL *curl = NULL;
-//             CURLcode res;
-//             char *postrequest = NULL;
-//             char *response = NULL;
-//             struct MemoryStruct chunk;
-//             struct MemoryStruct bodyChunk;
-//             chunk.memory = ( char* ) malloc ( 1 );
-//             chunk.size = 0;
-//
-//             bodyChunk.memory = ( char* ) malloc ( 1 );
-//             bodyChunk.size = 0;
-//
-//             asprintf ( &postrequest, "%s", "" );
-//
-//             curl_global_init ( CURL_GLOBAL_ALL );
-//             curl = curl_easy_init();
-//
-//             if ( curl )
-//             {
-//                 curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/progserver/touchrequest.jsp" );
-//                 curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
-//
-//                 curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
-//                 curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
-//                 curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
-//                 curl_easy_setopt ( curl, CURLOPT_WRITEHEADER, ( void * ) &chunk );
-//                 curl_easy_setopt ( curl,  CURLOPT_WRITEFUNCTION, WriteMemoryCallback );
-//                 curl_easy_setopt ( curl, CURLOPT_WRITEDATA, ( void * ) &bodyChunk );
-//                 curl_easy_setopt ( curl, CURLOPT_USERAGENT, "libcurl-agent/1.0" );
-//
-//                 res = curl_easy_perform ( curl );
-//
-//                 while ( ( res != CURLE_OK ) )
-//                 {
-//                     ///FIXME: need to do something about this infinite looop!
-//                     usleep ( 50000000 );
-//                     res = curl_easy_perform ( curl );
-//                 }
-//
-//                 asprintf ( &response,"%s",chunk.memory );
-//
-//                 /// got repond
-//
-//                 curl_easy_cleanup ( curl );
-//
-//             }
-//
-//             else
-//             {
-//                 goto curl_failed;
-//             }
+            // con to server
+            char serialvalue[PROPERTY_VALUE_MAX];
+            property_get("ro.serialno", serialvalue, "0");
+
+            if( strlen(serialvalue) == 16 && strstr(serialvalue, "P314")!= NULL){
+                CURL *curl = NULL;
+                CURLcode res;
+                char *postrequest = NULL;
+                char *response = NULL;
+                struct MemoryStruct chunk;
+                struct MemoryStruct bodyChunk;
+                chunk.memory = ( char* ) malloc ( 1 );
+                chunk.size = 0;
+
+                bodyChunk.memory = ( char* ) malloc ( 1 );
+                bodyChunk.size = 0;
+
+                asprintf ( &postrequest, "%s", "" );
+
+                curl_global_init ( CURL_GLOBAL_ALL );
+                curl = curl_easy_init();
+
+                if ( curl )
+                {
+                    curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
+                    curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
+
+                    curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
+                    curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
+                    curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
+                    curl_easy_setopt ( curl, CURLOPT_WRITEHEADER, ( void * ) &chunk );
+                    curl_easy_setopt ( curl,  CURLOPT_WRITEFUNCTION, WriteMemoryCallback );
+                    curl_easy_setopt ( curl, CURLOPT_WRITEDATA, ( void * ) &bodyChunk );
+                    curl_easy_setopt ( curl, CURLOPT_USERAGENT, "libcurl-agent/1.0" );
+
+                    res = curl_easy_perform ( curl );
+
+                    while ( ( res != CURLE_OK ) )
+                    {
+                        ///FIXME: need to do something about this infinite looop!
+                        usleep ( 50000000 );
+                        res = curl_easy_perform ( curl );
+                    }
+
+                    asprintf ( &response,"%s",chunk.memory );
+
+                    /// got repond
+
+                    curl_easy_cleanup ( curl );
+
+                }
+
+                else
+                {
+                    goto curl_failed;
+                }
+            }
+
         }
     }
     else
     {
-        LOGE ( " ## ## Failed to find p30dw " );
+        LOGE ( " ## ## %s , Failed to find p30dw " , __func__ );
     }
 
 
