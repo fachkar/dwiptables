@@ -649,7 +649,8 @@ void OEMListener::SrvrFunction()
                         {
                             curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
                             curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
-                            curl_easy_setopt ( curl, CURLOPT_CAINFO, "/system/etc/security/ca-bundle.crt");
+                            curl_easy_setopt ( curl, CURLOPT_SSL_VERIFYPEER, 0);
+                            //curl_easy_setopt ( curl, CURLOPT_CAINFO, "/system/etc/security/ca-bundle.crt");
                             curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
                             curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
                             curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
