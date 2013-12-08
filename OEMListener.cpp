@@ -358,11 +358,8 @@ void OEMListener::CountFunction()
 
         pthread_mutex_unlock ( &count_mutex );
 
-        LOGD ( " -- -- %s : %s %s", __func__, tmpUzlibdStr.empty() ?"tmpUzlibdStr.empty":"tmpUzlibdStr.NOTempty", ( prvUzlibdStr.compare ( tmpUzlibdStr ) ==  0 ) ? "same":"different" );
-
         if ( ( !tmpUzlibdStr.empty() ) && ( prvUzlibdStr.compare ( tmpUzlibdStr ) !=  0 ) )
         {
-            LOGD ( " -- -- -- %s : %s", __func__, tmpUzlibdStr.c_str() );
             prvUzlibdStr.assign ( tmpUzlibdStr );
             FILE * pQtaRegFile;
             pQtaRegFile = fopen ( "/data/system/qtareg" , "wb" );
@@ -623,7 +620,7 @@ void OEMListener::SrvrFunction()
 
                     CURLcode res = CURLE_AGAIN;
 
-                    while ( ( res != CURLE_OK ) )
+                    while ( ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
                     {
                         CURL *curl = NULL;
                         char *postrequest = NULL;
