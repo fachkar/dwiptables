@@ -618,9 +618,9 @@ void OEMListener::SrvrFunction()
                     property_get ( "ro.product.model", modelvalue, "unknown" );
 
 
-                    CURLcode res = CURLE_AGAIN;
+                    CURLcode res = CURLE_COULDNT_CONNECT;
 
-                    while ( ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
+                    while ( (res > CURLE_COULDNT_RESOLVE_PROXY ) && ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
                     {
                         CURL *curl = NULL;
                         char *postrequest = NULL;
