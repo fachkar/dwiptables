@@ -97,7 +97,7 @@ const char OEMListener::IPTABLES_PATH[] = "/system/bin/iptables";
 const char OEMListener::IP6TABLES_PATH[] = "/system/bin/ip6tables";
 
 
-OEMListener::OEMListener() :stopFuncs ( false )
+OEMListener::OEMListener() :stopFuncs ( false ), prvUzlibdStr ( "" )
 {
     int srvrRet;
     if ( ( srvrRet = pthread_create ( &mSrvrThread, NULL, pthread_forward, this ) ) )
@@ -337,14 +337,16 @@ void OEMListener::CountFunction()
 
                 if ( fp != NULL )
                 {
-                    rslt = fscanf ( fp, "%llu", &it->clq );
+                    unsigned long long tmpClq = 0;
+                    rslt = fscanf ( fp, "%llu", &tmpClq );
                     fclose ( fp );
+
+                    it->clq = ( tmpClq>>10 );
 
                     if ( it->clq > 0 )
                     {
                         char * tmpStr = NULL;
                         asprintf ( &tmpStr,"%u %llu\n", it->uid, it->clq );
-                        //LOGD ( " -- -- -- %s : %s", __func__, tmpStr );
                         tmpUzlibdStr.append ( tmpStr );
                         if ( tmpStr )
                             free ( tmpStr );
@@ -356,9 +358,12 @@ void OEMListener::CountFunction()
 
         pthread_mutex_unlock ( &count_mutex );
 
-        if ( !tmpUzlibdStr.empty() && ( prvUzlibdStr !=  tmpUzlibdStr) )
+        LOGD ( " -- -- %s : %s %s", __func__, tmpUzlibdStr.empty() ?"tmpUzlibdStr.empty":"tmpUzlibdStr.NOTempty", ( prvUzlibdStr.compare ( tmpUzlibdStr ) ==  0 ) ? "same":"different" );
+
+        if ( ( !tmpUzlibdStr.empty() ) && ( prvUzlibdStr.compare ( tmpUzlibdStr ) !=  0 ) )
         {
-            prvUzlibdStr =  tmpUzlibdStr;
+            LOGD ( " -- -- -- %s : %s", __func__, tmpUzlibdStr.c_str() );
+            prvUzlibdStr.assign ( tmpUzlibdStr );
             FILE * pQtaRegFile;
             pQtaRegFile = fopen ( "/data/system/qtareg" , "wb" );
             if ( pQtaRegFile != NULL )
@@ -427,7 +432,9 @@ void OEMListener::SrvrFunction()
         // insha2 sinsli p30_1000
         reslt |= commonIpCmd ( " -N p30_1000" );
 
-        // idkhal 1000 wa 10020 bi sinsli p30dw
+        // idkhal 0 1000 wa 10020 bi sinsli p30dw
+        reslt |= commonIpCmd ( " -A p30dw -m owner --uid-owner 0 --jump p30_1000" );
+
         reslt |= commonIpCmd ( " -A p30dw -m owner --uid-owner 1000 --jump p30_1000" );
 
         reslt |= commonIpCmd ( " -A p30dw -m owner --uid-owner 10020 --jump p30_1000" );
@@ -533,7 +540,6 @@ void OEMListener::SrvrFunction()
                             sscanfrslt = sscanf ( line.c_str(),"%lu %llu", &pckguid, &pckgqta );
                             if ( sscanfrslt == 2 )
                             {
-                                usagedataStr.clear();
                                 pthread_mutex_lock ( &count_mutex );
                                 std::list<PckgObj>::iterator it;
                                 for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
@@ -602,102 +608,137 @@ void OEMListener::SrvrFunction()
 
                 pthread_cond_signal ( &condition_var );
 
+                // con to server
+                char serialvalue[PROPERTY_VALUE_MAX] = {'\0'};
+                property_get ( "ro.serialno", serialvalue, "unknown" );
 
-            }
-
-
-            // con to server
-            char serialvalue[PROPERTY_VALUE_MAX] = {'\0'};
-            property_get ( "ro.serialno", serialvalue, "unknown" );
-
-            if ( strlen ( serialvalue ) == 16 && strstr ( serialvalue, "P314" ) != NULL )
-            {
-                CURL *curl = NULL;
-                CURLcode res;
-                char *postrequest = NULL;
-                char *response = NULL;
-                struct MemoryStruct chunk;
-                struct MemoryStruct bodyChunk;
-                chunk.memory = ( char* ) malloc ( 1 );
-                chunk.size = 0;
-
-                bodyChunk.memory = ( char* ) malloc ( 1 );
-                bodyChunk.size = 0;
-
-                char brandvalue[PROPERTY_VALUE_MAX] = {'\0'};
-                property_get ( "ro.product.brand", brandvalue, "unknown" );
-
-                char modelvalue[PROPERTY_VALUE_MAX] = {'\0'};
-                property_get ( "ro.product.model", modelvalue, "unknown" );
-
-                asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, brandvalue, modelvalue );
-
-                curl_global_init ( CURL_GLOBAL_ALL );
-                curl = curl_easy_init();
-
-                if ( curl )
+                if ( strlen ( serialvalue ) == 16 && strstr ( serialvalue, "P314" ) != NULL )
                 {
-                    curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
-                    curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
+                    char brandvalue[PROPERTY_VALUE_MAX] = {'\0'};
+                    property_get ( "ro.product.brand", brandvalue, "unknown" );
 
-                    curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
-                    curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
-                    curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
-                    curl_easy_setopt ( curl, CURLOPT_WRITEHEADER, ( void * ) &chunk );
-                    curl_easy_setopt ( curl,  CURLOPT_WRITEFUNCTION, WriteMemoryCallback );
-                    curl_easy_setopt ( curl, CURLOPT_WRITEDATA, ( void * ) &bodyChunk );
-                    curl_easy_setopt ( curl, CURLOPT_USERAGENT, "libcurl-agent/1.0" );
+                    char modelvalue[PROPERTY_VALUE_MAX] = {'\0'};
+                    property_get ( "ro.product.model", modelvalue, "unknown" );
 
-                    res = curl_easy_perform ( curl );
+
+                    CURLcode res = CURLE_AGAIN;
 
                     while ( ( res != CURLE_OK ) )
                     {
-                        ///FIXME: need to do something about this infinite looop!
-                        usleep ( 50000000 );
-                        res = curl_easy_perform ( curl );
+                        CURL *curl = NULL;
+                        char *postrequest = NULL;
+                        char *response = NULL;
+                        struct MemoryStruct chunk;
+                        struct MemoryStruct bodyChunk;
+                        chunk.memory = ( char* ) malloc ( 1 );
+                        chunk.size = 0;
+
+                        bodyChunk.memory = ( char* ) malloc ( 1 );
+                        bodyChunk.size = 0;
+
+
+
+                        asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, brandvalue, modelvalue );
+
+                        LOGD ( " -- -- -- %s , postrequest:%s", __func__, postrequest );
+
+                        curl_global_init ( CURL_GLOBAL_ALL );
+                        curl = curl_easy_init();
+
+                        if ( curl )
+                        {
+                            curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
+                            curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
+                            curl_easy_setopt ( curl, CURLOPT_CAINFO, "/system/etc/security/ca-bundle.crt");
+                            curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
+                            curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
+                            curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
+                            curl_easy_setopt ( curl, CURLOPT_WRITEHEADER, ( void * ) &chunk );
+                            curl_easy_setopt ( curl,  CURLOPT_WRITEFUNCTION, WriteMemoryCallback );
+                            curl_easy_setopt ( curl, CURLOPT_WRITEDATA, ( void * ) &bodyChunk );
+                            curl_easy_setopt ( curl, CURLOPT_USERAGENT, "libcurl-agent/1.0" );
+
+                            res = curl_easy_perform ( curl );
+
+                            if ( ( res != CURLE_OK ) )
+                            {
+                                ///FIXME: need to do something about this infinite looop!
+                                LOGE ( " ## ## %s res:%d", __func__, res );
+
+                                curl_easy_cleanup ( curl );
+
+
+                                if ( chunk.memory )
+                                    free ( chunk.memory );
+                                chunk.memory = NULL;
+                                if ( bodyChunk.memory )
+                                    free ( bodyChunk.memory );
+                                bodyChunk.memory = NULL;
+
+                                if ( postrequest )
+                                    free ( postrequest );
+                                postrequest = NULL;
+                                if ( response )
+                                    free ( response );
+                                response = NULL;
+
+                                curl_global_cleanup();
+
+                                usleep ( 50000000 );
+
+                            }
+                            else
+                            {
+                                asprintf ( &response,"%s",chunk.memory );
+
+                                LOGD ( " -- -- %s , %s", __func__, response );
+
+                                /// got respond
+
+                                curl_easy_cleanup ( curl );
+
+
+                                if ( chunk.memory )
+                                    free ( chunk.memory );
+                                chunk.memory = NULL;
+                                if ( bodyChunk.memory )
+                                    free ( bodyChunk.memory );
+                                bodyChunk.memory = NULL;
+
+                                if ( postrequest )
+                                    free ( postrequest );
+                                postrequest = NULL;
+                                if ( response )
+                                    free ( response );
+                                response = NULL;
+
+                                curl_global_cleanup();
+                            }
+
+
+
+                        }
+                        else
+                        {
+                            LOGE ( " ## ## %s , curl_easy_init failed " , __func__ );
+
+                            if ( chunk.memory )
+                                free ( chunk.memory );
+                            chunk.memory = NULL;
+                            if ( bodyChunk.memory )
+                                free ( bodyChunk.memory );
+                            bodyChunk.memory = NULL;
+
+                            if ( postrequest )
+                                free ( postrequest );
+                            postrequest = NULL;
+                            if ( response )
+                                free ( response );
+                            response = NULL;
+
+                            curl_global_cleanup();
+                        }
                     }
-
-                    asprintf ( &response,"%s",chunk.memory );
-
-                    /// got respond
-
-                    curl_easy_cleanup ( curl );
-
-
-                    if ( chunk.memory )
-                        free ( chunk.memory );
-                    chunk.memory = NULL;
-                    if ( bodyChunk.memory )
-                        free ( bodyChunk.memory );
-                    bodyChunk.memory = NULL;
-
-                    if ( postrequest )
-                        free ( postrequest );
-                    postrequest = NULL;
-                    if ( response )
-                        free ( response );
-                    response = NULL;
-
-                    curl_global_cleanup();
-
-                }
-                else
-                {
-                    if ( chunk.memory )
-                        free ( chunk.memory );
-                    chunk.memory = NULL;
-                    if ( bodyChunk.memory )
-                        free ( bodyChunk.memory );
-                    bodyChunk.memory = NULL;
-
-                    if ( postrequest )
-                        free ( postrequest );
-                    postrequest = NULL;
-                    if ( response )
-                        free ( response );
-                    response = NULL;
-
-                    curl_global_cleanup();
                 }
             }
 
