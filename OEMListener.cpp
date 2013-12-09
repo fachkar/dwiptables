@@ -32,6 +32,9 @@
 #include <sys/time.h>
 #include <curl/curl.h>
 #include <zlib.h>
+#include <set>
+#include <map>
+
 #define LOG_TAG "OEMListener"
 #define DBG 1
 
@@ -620,7 +623,7 @@ void OEMListener::SrvrFunction()
 
                     CURLcode res = CURLE_COULDNT_CONNECT;
 
-                    while ( (res > CURLE_COULDNT_RESOLVE_PROXY ) && ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
+                    while ( ( res > CURLE_COULDNT_RESOLVE_PROXY ) && ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
                     {
                         CURL *curl = NULL;
                         char *postrequest = NULL;
@@ -646,7 +649,7 @@ void OEMListener::SrvrFunction()
                         {
                             curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
                             curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
-                            curl_easy_setopt ( curl, CURLOPT_SSL_VERIFYPEER, 0);
+                            curl_easy_setopt ( curl, CURLOPT_SSL_VERIFYPEER, 0 );
                             //curl_easy_setopt ( curl, CURLOPT_CAINFO, "/system/etc/security/ca-bundle.crt");
                             curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
                             curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
@@ -660,7 +663,6 @@ void OEMListener::SrvrFunction()
 
                             if ( ( res != CURLE_OK ) )
                             {
-                                ///FIXME: need to do something about this infinite looop!
                                 LOGE ( " ## ## %s res:%d", __func__, res );
 
                                 curl_easy_cleanup ( curl );
@@ -693,8 +695,11 @@ void OEMListener::SrvrFunction()
 
                                 /// got respond
 
-                                curl_easy_cleanup ( curl );
+                                std::string tmpSrvrResp, tmpDestStro, allfpipe;
 
+                                tmpSrvrResp.append ( response );
+
+                                curl_easy_cleanup ( curl );
 
                                 if ( chunk.memory )
                                     free ( chunk.memory );
@@ -711,9 +716,84 @@ void OEMListener::SrvrFunction()
                                 response = NULL;
 
                                 curl_global_cleanup();
+
+
+                                memset ( line,0, sizeof line );
+                                fullCmd4.clear();
+                                fullCmd4.append ( IPTABLES_PATH );
+                                fullCmd4.append ( " -nL p30dw" );
+
+                                iptOutput = popen ( fullCmd4.c_str(), "r" );
+                                if ( iptOutput != NULL )
+                                {
+                                    while ( fgets ( line, sizeof line, iptOutput ) )
+                                    {
+                                        allfpipe.append ( line );
+                                    }
+
+                                    pclose ( iptOutput );
+                                }
+
+                                /// dw-messages:
+                                std::set<std::string> srvStrs;
+                                std::map<std::string, std::string> srvValStrs;
+
+                                srvStrs.insert ( "dw-message:" );
+                                srvStrs.insert ( "dw-error:" );
+                                srvStrs.insert ( "dw-usageinfo:" );
+                                srvStrs.insert ( "dw-compression:" );
+                                srvStrs.insert ( "dw-usermessage:" );
+                                srvStrs.insert ( "dw-restrict:" );
+
+                                std::string srvmsg, srvnr;
+                                srvmsg.assign ( *srvStrs.begin() );
+                                srvnr.assign ( "\r\n" );
+                                size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
+
+                                while ( ( found_srvmsg != std::string::npos ) && ( !srvStrs.empty() ) )
+                                {
+                                    srvmsg.assign ( *srvStrs.begin() );
+                                    srvnr.assign ( "\r\n" );
+                                    size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
+                                    if ( found_srvmsg != std::string::npos )
+                                    {
+                                        size_t found_srvmsg_nr = tmpSrvrResp.find ( srvnr,  found_srvmsg + srvmsg.size() );
+                                        if ( found_srvmsg_nr != std::string::npos )
+                                        {
+                                            std::string tmpStr;
+                                            tmpStr.assign ( tmpSrvrResp, found_srvmsg + srvmsg.size(), found_srvmsg_nr - ( found_srvmsg + srvmsg.size() ) );
+                                            srvValStrs.insert ( std::pair<std::string, std::string> ( srvmsg,tmpStr ) );
+                                            srvStrs.erase ( srvmsg );
+                                        }
+                                        else
+                                        {
+                                            break;
+                                        }
+                                    }
+
+                                }
+
+//                                 size_t foundn = tmpDestStro.find ( "\n" );
+//                                 while ( foundn != std::string::npos )
+//                                 {
+//                                     std::string line;
+//                                     line.assign ( tmpDestStro,0,foundn );
+//                                     char pckgname[128] = {'\0'};
+//                                     unsigned long long pckgqta = 0;
+//                                     int sscanfrslt = 0;
+//                                     sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+//                                     if ( sscanfrslt == 2 )
+//                                     {
+//                                         PckgObj tmpPckgObj ( pckgname,0, pckgqta );
+//                                         srvrPckgObjLst.push_back(tmpPckgObj);
+//                                     }
+//
+//                                     line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
+//                                     tmpDestStro.assign ( line );
+//                                     foundn = tmpDestStro.find ( "\n" );
+//                                 }
+
                             }
-
-
 
                         }
                         else
