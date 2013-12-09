@@ -737,6 +737,7 @@ void OEMListener::SrvrFunction()
                                 /// dw-messages:
                                 std::set<std::string> srvStrs;
                                 std::map<std::string, std::string> srvValStrs;
+                                std::list<PckgObj> srvrPckgObjLst;
 
                                 srvStrs.insert ( "dw-message:" );
                                 srvStrs.insert ( "dw-error:" );
@@ -777,33 +778,76 @@ void OEMListener::SrvrFunction()
                                 {
                                     if ( srvValStrs["dw-restrict:"].find ( "no" ) )
                                     {
+                                        std::list<PckgObj>::iterator it;
+                                        for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                        {
+                                            char * tmpStro = NULL;
+                                            asprintf ( &tmpStro,"p30_%u", it->uid );
+                                            size_t found_uid = allfpipe.find ( tmpStro );
+                                            if ( found_uid != std::string::npos )
+                                            {
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
 
+                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->uid );
+                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+
+                                                asprintf ( &tmpStro," -F p30_%u", it->uid );
+                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+
+
+                                                asprintf ( &tmpStro," -X p30_%u", it->uid );
+                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+                                            }
+
+                                            if ( tmpStro )
+                                                free ( tmpStro );
+                                            tmpStro = NULL;
+                                        }
                                     }
                                     else if ( srvValStrs["dw-restrict:"].find ( "yes" ) )
                                     {
+                                        tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] )
+                                        size_t foundn = tmpDestStro.find ( "\n" );
+                                        while ( foundn != std::string::npos )
+                                        {
+                                            std::string line;
+                                            line.assign ( tmpDestStro,0,foundn );
+                                            char pckgname[128] = {'\0'};
+                                            unsigned long long pckgqta = 0;
+                                            int sscanfrslt = 0;
+                                            sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                            if ( sscanfrslt == 2 )
+                                            {
+                                                PckgObj tmpPckgObj ( pckgname,0, pckgqta );
+                                                srvrPckgObjLst.push_back ( tmpPckgObj );
+                                            }
+
+                                            line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
+                                            tmpDestStro.assign ( line );
+                                            foundn = tmpDestStro.find ( "\n" );
+                                        }
+
+                                        std::list<PckgObj>::iterator it;
+                                        for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                        {
+                                        }
 
                                     }
                                 }
-
-//                                 size_t foundn = tmpDestStro.find ( "\n" );
-//                                 while ( foundn != std::string::npos )
-//                                 {
-//                                     std::string line;
-//                                     line.assign ( tmpDestStro,0,foundn );
-//                                     char pckgname[128] = {'\0'};
-//                                     unsigned long long pckgqta = 0;
-//                                     int sscanfrslt = 0;
-//                                     sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-//                                     if ( sscanfrslt == 2 )
-//                                     {
-//                                         PckgObj tmpPckgObj ( pckgname,0, pckgqta );
-//                                         srvrPckgObjLst.push_back(tmpPckgObj);
-//                                     }
-//
-//                                     line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
-//                                     tmpDestStro.assign ( line );
-//                                     foundn = tmpDestStro.find ( "\n" );
-//                                 }
 
                             }
 
