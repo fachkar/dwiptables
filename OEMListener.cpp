@@ -773,6 +773,18 @@ void OEMListener::SrvrFunction()
 
                                 }
 
+                                if ( srvValStrs["dw-message:"].find ( "Success" ) && srvValStrs["dw-error:"].find ( "0" ) )
+                                {
+                                    if ( srvValStrs["dw-restrict:"].find ( "no" ) )
+                                    {
+
+                                    }
+                                    else if ( srvValStrs["dw-restrict:"].find ( "yes" ) )
+                                    {
+
+                                    }
+                                }
+
 //                                 size_t foundn = tmpDestStro.find ( "\n" );
 //                                 while ( foundn != std::string::npos )
 //                                 {
