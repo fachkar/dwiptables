@@ -19,6 +19,7 @@
 
 #include <string>
 #include <list>
+#include<map>
 #include <pthread.h>
 #include <sysutils/FrameworkListener.h>
 
@@ -54,6 +55,7 @@ public:
     {
         stopFuncs = true;
         mPckgObjLst.clear();
+        regPckgObjLst.clear();
     }
     void SrvrFunction();
     void CountFunction();
@@ -62,6 +64,7 @@ public:
     int infStr ( FILE *source, std::string& rtrnStr );
     int defStr ( std::string srcStr, FILE *dest );
     std::string DeflateString ( const std::string& str );
+    std::string urlEncode(std::string regstr);
 private:
     bool stopFuncs;
     std::string prvUzlibdStr;
@@ -70,6 +73,8 @@ private:
     static const char IP6TABLES_PATH[];
     pthread_t mSrvrThread, mCountThread;
     std::list<PckgObj> mPckgObjLst;
+    std::list<PckgObj> regPckgObjLst;
+    std::map<char, std::string> mRsrvdUrl;
 };
 
 #endif
