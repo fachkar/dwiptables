@@ -998,7 +998,8 @@ void OEMListener::SrvrFunction()
                                         }
 
                                         pthread_mutex_unlock ( &count_mutex );
-                                    }else if ( srvValStrs["dw-restrict:"].find ( "rem" ) )
+                                    }
+                                    else if ( srvValStrs["dw-restrict:"].find ( "rem" ) )
                                     {
                                         pthread_mutex_lock ( &count_mutex );
 
@@ -1028,7 +1029,8 @@ void OEMListener::SrvrFunction()
                                                     }
                                                 }
 
-                                                if(tmpPckgObj.uid > 0){
+                                                if ( tmpPckgObj.uid > 0 )
+                                                {
                                                     char * tmpStro = NULL;
                                                     asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", tmpPckgObj.uid, tmpPckgObj.uid );
                                                     reslt |= commonIpCmd ( tmpStro );
@@ -1058,7 +1060,7 @@ void OEMListener::SrvrFunction()
                                                     size_t found_srvpckg = it->package.find ( tmpPckgObj.package );
                                                     if ( found_srvpckg != std::string::npos )
                                                     {
-                                                        regPckgObjLst.erase(it);
+                                                        regPckgObjLst.erase ( it );
                                                         break;
                                                     }
                                                 }
