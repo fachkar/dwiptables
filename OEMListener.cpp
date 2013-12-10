@@ -759,6 +759,7 @@ void OEMListener::SrvrFunction()
                                 {
                                   if ( srvValStrs["dw-restrict:"].find ( "no" ) )
                                     {
+                                      pthread_mutex_lock ( &count_mutex );
                                       std::list<PckgObj>::iterator it;
                                       for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                         {
@@ -790,6 +791,7 @@ void OEMListener::SrvrFunction()
                                             }
 
                                         }
+                                      pthread_mutex_unlock ( &count_mutex );
                                     }
                                   else if ( srvValStrs["dw-restrict:"].find ( "yes" ) )
                                     {
@@ -814,6 +816,7 @@ void OEMListener::SrvrFunction()
                                           foundn = tmpDestStro.find ( "\n" );
                                         }
 
+                                      pthread_mutex_lock ( &count_mutex );
                                       std::list<PckgObj>::iterator itsrv;
                                       for ( itsrv = srvrPckgObjLst.begin(); itsrv != srvrPckgObjLst.end(); ++itsrv )
                                         {
@@ -890,7 +893,7 @@ void OEMListener::SrvrFunction()
                                             }
 
                                         }
-
+                                      pthread_mutex_unlock ( &count_mutex );
                                     }
                                 }
 
