@@ -640,8 +640,6 @@ void OEMListener::SrvrFunction()
 
                         asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, brandvalue, modelvalue );
 
-                        LOGD ( " -- -- -- %s , postrequest:%s", __func__, postrequest );
-
                         curl_global_init ( CURL_GLOBAL_ALL );
                         curl = curl_easy_init();
 
@@ -717,23 +715,6 @@ void OEMListener::SrvrFunction()
 
                                 curl_global_cleanup();
 
-
-                                memset ( line,0, sizeof line );
-                                fullCmd4.clear();
-                                fullCmd4.append ( IPTABLES_PATH );
-                                fullCmd4.append ( " -nL p30dw" );
-
-                                iptOutput = popen ( fullCmd4.c_str(), "r" );
-                                if ( iptOutput != NULL )
-                                {
-                                    while ( fgets ( line, sizeof line, iptOutput ) )
-                                    {
-                                        allfpipe.append ( line );
-                                    }
-
-                                    pclose ( iptOutput );
-                                }
-
                                 /// dw-messages:
                                 std::set<std::string> srvStrs;
                                 std::map<std::string, std::string> srvValStrs;
@@ -782,14 +763,9 @@ void OEMListener::SrvrFunction()
                                         for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                         {
                                             char * tmpStro = NULL;
-                                            asprintf ( &tmpStro,"p30_%u", it->uid );
-                                            size_t found_uid = allfpipe.find ( tmpStro );
-                                            if ( found_uid != std::string::npos )
-                                            {
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
 
+                                            if ( it->clq > 0 )
+                                            {
                                                 asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->uid );
                                                 reslt |= commonIpCmd ( tmpStro );
 
@@ -813,14 +789,11 @@ void OEMListener::SrvrFunction()
                                                 tmpStro = NULL;
                                             }
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
                                         }
                                     }
                                     else if ( srvValStrs["dw-restrict:"].find ( "yes" ) )
                                     {
-                                        tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] )
+                                        tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
                                         size_t foundn = tmpDestStro.find ( "\n" );
                                         while ( foundn != std::string::npos )
                                         {
