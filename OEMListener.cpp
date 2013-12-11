@@ -220,7 +220,7 @@ std::string OEMListener::DeflateString ( const std::string& str )
 
     if ( ret != Z_STREAM_END )          // an error occurred that was not EOF
     {
-        LOGE ( " ## ## %s , Exception during zlib decompression: ( %d) %s\n", __func__, ret, zs.msg );
+        LOGE ( " ## ## %s , Exception during zlib decompression: ( %d) %s", __func__, ret, zs.msg );
         return outstring;
     }
 
@@ -345,7 +345,7 @@ void OEMListener::CountFunction()
                 it->clq = ( tmpClq>>10 );
 
                 char * tmpStr = NULL;
-                asprintf ( &tmpStr,"%s %u %llu\n", it->package.c_str(), it->uid, it->clq );
+                asprintf ( &tmpStr,"%s %u %llu,", it->package.c_str(), it->uid, it->clq );
                 tmpUzlibdStr.append ( tmpStr );
                 if ( tmpStr )
                     free ( tmpStr );
@@ -355,7 +355,7 @@ void OEMListener::CountFunction()
             else
             {
                 char * tmpStr = NULL;
-                asprintf ( &tmpStr,"%s %u %llu\n", it->package.c_str(), it->uid, it->clq );
+                asprintf ( &tmpStr,"%s %u %llu,", it->package.c_str(), it->uid, it->clq );
                 tmpUzlibdStr.append ( tmpStr );
                 if ( tmpStr )
                     free ( tmpStr );
@@ -567,7 +567,7 @@ void OEMListener::SrvrFunction()
 
                     if ( ret == Z_OK )
                     {
-                        size_t foundn = tmpDestStro.find ( "\n" );
+                        size_t foundn = tmpDestStro.find ( "," );
                         while ( foundn != std::string::npos )
                         {
                             std::string line;
@@ -589,7 +589,7 @@ void OEMListener::SrvrFunction()
                                 usagedataStr.append ( " " );
                                 asprintf ( &tmpCharo, "%llu", pckgqta );
                                 usagedataStr.append ( tmpCharo );
-                                usagedataStr.append ( "\n" );
+                                usagedataStr.append ( "," );
 
                                 if ( tmpCharo )
                                     free ( tmpCharo );
@@ -635,7 +635,7 @@ void OEMListener::SrvrFunction()
 
                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                             tmpDestStro.assign ( line );
-                            foundn = tmpDestStro.find ( "\n" );
+                            foundn = tmpDestStro.find ( "," );
                         }
                     }
 
@@ -672,6 +672,8 @@ void OEMListener::SrvrFunction()
                         bodyChunk.size = 0;
 
                         asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, urlEncode ( brandvalue ).c_str(), urlEncode ( modelvalue ).c_str() );
+
+                        LOGD ( " -- -- %s , %s", __func__, postrequest );
 
                         curl_global_init ( CURL_GLOBAL_ALL );
                         curl = curl_easy_init();
@@ -768,15 +770,19 @@ void OEMListener::SrvrFunction()
                                 {
                                     srvmsg.assign ( *srvStrs.begin() );
                                     srvnr.assign ( "\r\n" );
+
                                     size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
                                     if ( found_srvmsg != std::string::npos )
                                     {
+
                                         size_t found_srvmsg_nr = tmpSrvrResp.find ( srvnr,  found_srvmsg + srvmsg.size() );
                                         if ( found_srvmsg_nr != std::string::npos )
                                         {
+
                                             std::string tmpStr;
                                             tmpStr.assign ( tmpSrvrResp, found_srvmsg + srvmsg.size(), found_srvmsg_nr - ( found_srvmsg + srvmsg.size() ) );
                                             srvValStrs.insert ( std::pair<std::string, std::string> ( srvmsg,tmpStr ) );
+
                                             srvStrs.erase ( srvmsg );
                                         }
                                         else
@@ -789,7 +795,7 @@ void OEMListener::SrvrFunction()
 
                                 if ( srvValStrs["dw-message:"].find ( "Success" ) && srvValStrs["dw-error:"].find ( "0" ) )
                                 {
-                                    if ( srvValStrs["dw-restrict:"].find ( "no" ) )
+                                    if ( srvValStrs["dw-restrict:"].find ( "no" ) != std::string::npos )
                                     {
                                         pthread_mutex_lock ( &count_mutex );
                                         std::list<PckgObj>::iterator it;
@@ -823,8 +829,9 @@ void OEMListener::SrvrFunction()
                                         regPckgObjLst.clear();
                                         pthread_mutex_unlock ( &count_mutex );
                                     }
-                                    else if ( srvValStrs["dw-restrict:"].find ( "new" ) )
+                                    else if ( srvValStrs["dw-restrict:"].find ( "new" ) != std::string::npos )
                                     {
+
                                         /// remove previous data
                                         pthread_mutex_lock ( &count_mutex );
                                         std::list<PckgObj>::iterator it;
@@ -859,7 +866,8 @@ void OEMListener::SrvrFunction()
 
                                         std::string tmpDestStro;
                                         tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
-                                        size_t foundn = tmpDestStro.find ( "\n" );
+
+                                        size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
                                         {
                                             std::string line;
@@ -867,6 +875,7 @@ void OEMListener::SrvrFunction()
                                             char pckgname[128] = {'\0'};
                                             unsigned long long pckgqta = 0;
                                             int sscanfrslt = 0;
+
                                             sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
                                             if ( sscanfrslt == 2 )
                                             {
@@ -921,18 +930,18 @@ void OEMListener::SrvrFunction()
 
                                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                                             tmpDestStro.assign ( line );
-                                            foundn = tmpDestStro.find ( "\n" );
+                                            foundn = tmpDestStro.find ( "," );
                                         }
 
                                         pthread_mutex_unlock ( &count_mutex );
                                     }
-                                    else if ( srvValStrs["dw-restrict:"].find ( "add" ) )
+                                    else if ( srvValStrs["dw-restrict:"].find ( "add" ) != std::string::npos )
                                     {
                                         pthread_mutex_lock ( &count_mutex );
 
                                         std::string tmpDestStro;
                                         tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
-                                        size_t foundn = tmpDestStro.find ( "\n" );
+                                        size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
                                         {
                                             std::string line;
@@ -940,6 +949,7 @@ void OEMListener::SrvrFunction()
                                             char pckgname[128] = {'\0'};
                                             unsigned long long pckgqta = 0;
                                             int sscanfrslt = 0;
+
                                             sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
                                             if ( sscanfrslt == 2 )
                                             {
@@ -994,18 +1004,18 @@ void OEMListener::SrvrFunction()
 
                                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                                             tmpDestStro.assign ( line );
-                                            foundn = tmpDestStro.find ( "\n" );
+                                            foundn = tmpDestStro.find ( "," );
                                         }
 
                                         pthread_mutex_unlock ( &count_mutex );
                                     }
-                                    else if ( srvValStrs["dw-restrict:"].find ( "rem" ) )
+                                    else if ( srvValStrs["dw-restrict:"].find ( "rem" ) != std::string::npos )
                                     {
                                         pthread_mutex_lock ( &count_mutex );
 
                                         std::string tmpDestStro;
                                         tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
-                                        size_t foundn = tmpDestStro.find ( "\n" );
+                                        size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
                                         {
                                             std::string line;
@@ -1013,6 +1023,7 @@ void OEMListener::SrvrFunction()
                                             char pckgname[128] = {'\0'};
                                             unsigned long long pckgqta = 0;
                                             int sscanfrslt = 0;
+
                                             sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
                                             if ( sscanfrslt == 2 )
                                             {
@@ -1069,7 +1080,7 @@ void OEMListener::SrvrFunction()
 
                                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                                             tmpDestStro.assign ( line );
-                                            foundn = tmpDestStro.find ( "\n" );
+                                            foundn = tmpDestStro.find ( "," );
                                         }
 
                                         pthread_mutex_unlock ( &count_mutex );
