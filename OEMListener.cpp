@@ -864,47 +864,48 @@ void OEMListener::SrvrFunction()
                                     {
                                         pthread_mutex_lock ( &count_mutex );
 
-                                        /// triva da bide set, ashtoto sorted
+                                        /// triva da bide set, guarantees -F avant -X
                                         std::set<std::string> chnXSet;
                                         for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
-                                            if ( it->gid == it->uid )
+                                            if ( it->uid > 0 )
                                             {
-                                                char * tmpStro = NULL;
-                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                reslt |= commonIpCmd ( tmpStro );
+                                                if ( it->gid == it->uid )
+                                                {
+                                                    char * tmpStro = NULL;
+                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                    reslt |= commonIpCmd ( tmpStro );
 
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
 
-                                                asprintf ( &tmpStro," -F p30_%u", it->gid );
-                                                chnXSet.insert ( tmpStro );
+                                                    asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                    chnXSet.insert ( tmpStro );
 
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
 
 
-                                                asprintf ( &tmpStro," -X p30_%u", it->gid );
-                                                chnXSet.insert ( tmpStro );
+                                                    asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                    chnXSet.insert ( tmpStro );
 
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
+                                                }
+                                                else
+                                                {
+                                                    char * tmpStro = NULL;
+                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                    reslt |= commonIpCmd ( tmpStro );
+
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
+                                                }
                                             }
-                                            else
-                                            {
-                                                char * tmpStro = NULL;
-                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                reslt |= commonIpCmd ( tmpStro );
-
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
-                                            }
-
-
                                         }
 
                                         for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
@@ -925,42 +926,44 @@ void OEMListener::SrvrFunction()
                                         std::set<std::string> chnXSet;
                                         for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
-                                            if ( it->gid == it->uid )
+                                            if ( it-> uid > 0 )
                                             {
-                                                char * tmpStro = NULL;
-                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                reslt |= commonIpCmd ( tmpStro );
+                                                if ( it->gid == it->uid )
+                                                {
+                                                    char * tmpStro = NULL;
+                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                    reslt |= commonIpCmd ( tmpStro );
 
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
 
-                                                asprintf ( &tmpStro," -F p30_%u", it->gid );
-                                                chnXSet.insert ( tmpStro );
+                                                    asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                    chnXSet.insert ( tmpStro );
 
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
 
 
-                                                asprintf ( &tmpStro," -X p30_%u", it->gid );
-                                                chnXSet.insert ( tmpStro );
+                                                    asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                    chnXSet.insert ( tmpStro );
 
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
+                                                }
+                                                else
+                                                {
+                                                    char * tmpStro = NULL;
+                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                    reslt |= commonIpCmd ( tmpStro );
+
+                                                    if ( tmpStro )
+                                                        free ( tmpStro );
+                                                    tmpStro = NULL;
+                                                }
                                             }
-                                            else
-                                            {
-                                                char * tmpStro = NULL;
-                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                reslt |= commonIpCmd ( tmpStro );
-
-                                                if ( tmpStro )
-                                                    free ( tmpStro );
-                                                tmpStro = NULL;
-                                            }
-
                                         }
 
                                         for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
@@ -1291,7 +1294,7 @@ void OEMListener::SrvrFunction()
                                                 }
                                             }
 
-                                            std::set<std::string> chnXSet;
+                                            std::set<std::string> chnXSet; // guarantee -F before -X
                                             for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
                                             {
                                                 for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
