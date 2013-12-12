@@ -567,6 +567,8 @@ void OEMListener::SrvrFunction()
 
                     if ( ret == Z_OK )
                     {
+                        pthread_mutex_lock ( &count_mutex );
+                        std::list<PckgObj> pckgGrpLst;
                         size_t foundn = tmpDestStro.find ( "," );
                         while ( foundn != std::string::npos )
                         {
@@ -580,9 +582,23 @@ void OEMListener::SrvrFunction()
                             sscanfrslt = sscanf ( line.c_str(),"%s %u %u %llu", pckgname, &pckguid, &pckggid, &pckgqta );
                             if ( sscanfrslt == 4 )
                             {
-                                pthread_mutex_lock ( &count_mutex );
-
+                                /// user might install pckg after rule inforcement
                                 PckgObj tmpPckgObj ( pckgname, pckguid, pckggid, pckgqta );
+                                for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                {
+                                    size_t found_srvpckg = it->package.find ( tmpPckgObj.package );
+                                    if ( found_srvpckg != std::string::npos )
+                                    {
+                                        tmpPckgObj.uid = it->uid;
+                                        if ( tmpPckgObj.gid == 0 )
+                                        {
+                                            tmpPckgObj.gid = it->gid;
+                                        }
+                                        break;
+                                    }
+                                }
+
+                                pckgGrpLst.push_back ( tmpPckgObj );
                                 regPckgObjLst.push_back ( tmpPckgObj );
 
                                 if ( usagedataStrMap.find ( tmpPckgObj.gid ) != usagedataStrMap.end() )
@@ -615,8 +631,8 @@ void OEMListener::SrvrFunction()
                                     {
                                         // insha2 sinsli p30_xxx
                                         char *snisliname = NULL;
-                                        asprintf ( &snisliname, "%u", tmpPckgObj.uid );
-                                        std::string snisliUidStr ( snisliname );
+                                        asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+                                        std::string snisliGidStr ( snisliname );
                                         if ( snisliname )
                                             free ( snisliname );
                                         snisliname = NULL;
@@ -629,50 +645,57 @@ void OEMListener::SrvrFunction()
                                         snisliname = NULL;
 
 
-                                        reslt |= commonIpCmd ( " -N p30_" + snisliUidStr );
+                                        reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
 
                                         fullCmd4.clear();
                                         fullCmd4.append ( IPTABLES_PATH );
-                                        fullCmd4.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
+                                        fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
                                         reslt |= system_nosh ( fullCmd4.c_str() );
 
                                         fullCmd6.clear();
                                         fullCmd6.append ( IP6TABLES_PATH );
-                                        fullCmd6.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
+                                        fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
                                         reslt |= system_nosh ( fullCmd6.c_str() );
 
-                                        reslt |= commonIpCmd ( " -A p30_" + snisliUidStr + " --jump ACCEPT" );
+                                        reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
 
-                                        reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
                                     }
-                                    else
-                                    {
-                                        char *snisliname = NULL;
-                                        asprintf ( &snisliname, "%u", tmpPckgObj.uid );
-                                        std::string snisliUidStr ( snisliname );
-                                        if ( snisliname )
-                                            free ( snisliname );
-                                        snisliname = NULL;
-
-                                        asprintf ( &snisliname, "%u", tmpPckgObj.gid );
-
-                                        std::string snisliGidStr ( snisliname );
-                                        if ( snisliname )
-                                            free ( snisliname );
-                                        snisliname = NULL;
-
-                                        reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
-                                    }
-
                                 }
 
-                                pthread_mutex_unlock ( &count_mutex );
                             }
 
                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                             tmpDestStro.assign ( line );
                             foundn = tmpDestStro.find ( "," );
                         }
+
+                        /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
+                        for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                        {
+                            PckgObj tmpPckgObj ( *pcgSetit );
+                            if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                            {
+                                char *snisliname = NULL;
+                                asprintf ( &snisliname, "%u", tmpPckgObj.uid );
+                                std::string snisliUidStr ( snisliname );
+                                if ( snisliname )
+                                    free ( snisliname );
+                                snisliname = NULL;
+
+                                asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+
+                                std::string snisliGidStr ( snisliname );
+                                if ( snisliname )
+                                    free ( snisliname );
+                                snisliname = NULL;
+
+                                reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
+                            }
+                        }
+
+                        pckgGrpLst.clear();
+
+                        pthread_mutex_unlock ( &count_mutex );
                     }
 
                 }
@@ -841,6 +864,7 @@ void OEMListener::SrvrFunction()
                                     {
                                         pthread_mutex_lock ( &count_mutex );
 
+                                        /// triva da bide set, ashtoto sorted
                                         std::set<std::string> chnXSet;
                                         for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
@@ -897,6 +921,7 @@ void OEMListener::SrvrFunction()
                                     {
                                         /// remove previous data
                                         pthread_mutex_lock ( &count_mutex );
+
                                         std::set<std::string> chnXSet;
                                         for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
@@ -953,29 +978,107 @@ void OEMListener::SrvrFunction()
                                         while ( foundn != std::string::npos )
                                         {
                                             std::string line;
-                                            line.assign ( tmpDestStro,0,foundn );
-                                            char pckgname[128] = {'\0'};
                                             unsigned long long pckgqta = 0;
                                             int sscanfrslt = 0;
 
-                                            sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-                                            if ( sscanfrslt == 2 )
+                                            line.assign ( tmpDestStro,0,foundn );
+
+                                            std::list<PckgObj> pckgGrpLst;
+                                            size_t foundspc = line.find ( " " );
+                                            while ( foundspc != std::string::npos && sscanfrslt < 2 )
                                             {
-                                                PckgObj tmpPckgObj ( pckgname,0, pckgqta );
+                                                char pckgname[128] = {'\0'};
+                                                sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                                if ( sscanfrslt == 2 )
+                                                {
+                                                    PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                    break;
+                                                }
+                                                else
+                                                {
+                                                    sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
+                                                    if ( sscanfrslt == 1 )
+                                                    {
+                                                        std::string subline;
+                                                        subline.assign ( line, 0, foundspc );
+                                                        PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                        subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
+                                                        line.assign ( subline );
+                                                        foundspc = line.find ( " " );
+                                                    }
+                                                }
+                                            }
+
+                                            unsigned int groupid = 0;
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
+                                                pcgSetit->clq = pckgqta;
                                                 for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                                 {
-                                                    size_t found_srvpckg = it->package.find ( pckgname );
+                                                    size_t found_srvpckg = it->package.find ( pcgSetit->package );
                                                     if ( found_srvpckg != std::string::npos )
                                                     {
-                                                        tmpPckgObj.uid = it->uid;
+                                                        pcgSetit->uid = it->uid;
+                                                        groupid = it->uid;
                                                         break;
                                                     }
                                                 }
+                                            }
 
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
+                                                pcgSetit->gid = groupid;
+                                                PckgObj tmpPckgObj ( *pcgSetit );
                                                 regPckgObjLst.push_back ( tmpPckgObj );
-                                                if ( tmpPckgObj.uid > 0 )
+
+                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
                                                 {
-                                                    // insha2 sinsli p30_xxx
+
+                                                    if ( tmpPckgObj.gid == tmpPckgObj.uid )
+                                                    {
+                                                        // insha2 sinsli p30_xxx
+                                                        char *snisliname = NULL;
+                                                        asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+                                                        std::string snisliGidStr ( snisliname );
+                                                        if ( snisliname )
+                                                            free ( snisliname );
+                                                        snisliname = NULL;
+
+                                                        asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
+
+                                                        std::string snisliQuotaStr ( snisliname );
+                                                        if ( snisliname )
+                                                            free ( snisliname );
+                                                        snisliname = NULL;
+
+
+                                                        reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
+
+                                                        fullCmd4.clear();
+                                                        fullCmd4.append ( IPTABLES_PATH );
+                                                        fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
+                                                        reslt |= system_nosh ( fullCmd4.c_str() );
+
+                                                        fullCmd6.clear();
+                                                        fullCmd6.append ( IP6TABLES_PATH );
+                                                        fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
+                                                        reslt |= system_nosh ( fullCmd6.c_str() );
+
+                                                        reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
+
+                                                    }
+                                                }
+                                            }
+
+
+                                            /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
+                                                PckgObj tmpPckgObj ( *pcgSetit );
+                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                                                {
                                                     char *snisliname = NULL;
                                                     asprintf ( &snisliname, "%u", tmpPckgObj.uid );
                                                     std::string snisliUidStr ( snisliname );
@@ -983,31 +1086,19 @@ void OEMListener::SrvrFunction()
                                                         free ( snisliname );
                                                     snisliname = NULL;
 
-                                                    asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
+                                                    asprintf ( &snisliname, "%u", tmpPckgObj.gid );
 
-                                                    std::string snisliQuotaStr ( snisliname );
+                                                    std::string snisliGidStr ( snisliname );
                                                     if ( snisliname )
                                                         free ( snisliname );
                                                     snisliname = NULL;
 
-
-                                                    reslt |= commonIpCmd ( " -N p30_" + snisliUidStr );
-
-                                                    fullCmd4.clear();
-                                                    fullCmd4.append ( IPTABLES_PATH );
-                                                    fullCmd4.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
-                                                    reslt |= system_nosh ( fullCmd4.c_str() );
-
-                                                    fullCmd6.clear();
-                                                    fullCmd6.append ( IP6TABLES_PATH );
-                                                    fullCmd6.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
-                                                    reslt |= system_nosh ( fullCmd6.c_str() );
-
-                                                    reslt |= commonIpCmd ( " -A p30_" + snisliUidStr + " --jump ACCEPT" );
-
-                                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
+                                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
                                                 }
                                             }
+
+                                            pckgGrpLst.clear();
+
 
                                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                                             tmpDestStro.assign ( line );
@@ -1022,33 +1113,112 @@ void OEMListener::SrvrFunction()
 
                                         std::string tmpDestStro;
                                         tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
+
                                         size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
                                         {
                                             std::string line;
-                                            line.assign ( tmpDestStro,0,foundn );
-                                            char pckgname[128] = {'\0'};
                                             unsigned long long pckgqta = 0;
                                             int sscanfrslt = 0;
 
-                                            sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-                                            if ( sscanfrslt == 2 )
+                                            line.assign ( tmpDestStro,0,foundn );
+
+                                            std::list<PckgObj> pckgGrpLst;
+                                            size_t foundspc = line.find ( " " );
+                                            while ( foundspc != std::string::npos && sscanfrslt < 2 )
                                             {
-                                                PckgObj tmpPckgObj ( pckgname,0, pckgqta );
+                                                char pckgname[128] = {'\0'};
+                                                sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                                if ( sscanfrslt == 2 )
+                                                {
+                                                    PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                    break;
+                                                }
+                                                else
+                                                {
+                                                    sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
+                                                    if ( sscanfrslt == 1 )
+                                                    {
+                                                        std::string subline;
+                                                        subline.assign ( line, 0, foundspc );
+                                                        PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                        subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
+                                                        line.assign ( subline );
+                                                        foundspc = line.find ( " " );
+                                                    }
+                                                }
+                                            }
+
+                                            unsigned int groupid = 0;
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
+                                                pcgSetit->clq = pckgqta;
                                                 for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                                 {
-                                                    size_t found_srvpckg = it->package.find ( pckgname );
+                                                    size_t found_srvpckg = it->package.find ( pcgSetit->package );
                                                     if ( found_srvpckg != std::string::npos )
                                                     {
-                                                        tmpPckgObj.uid = it->uid;
+                                                        pcgSetit->uid = it->uid;
+                                                        groupid = it->uid;
                                                         break;
                                                     }
                                                 }
+                                            }
 
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
+                                                pcgSetit->gid = groupid;
+                                                PckgObj tmpPckgObj ( *pcgSetit );
                                                 regPckgObjLst.push_back ( tmpPckgObj );
-                                                if ( tmpPckgObj.uid > 0 )
+
+                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
                                                 {
-                                                    // insha2 sinsli p30_xxx
+
+                                                    if ( tmpPckgObj.gid == tmpPckgObj.uid )
+                                                    {
+                                                        // insha2 sinsli p30_xxx
+                                                        char *snisliname = NULL;
+                                                        asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+                                                        std::string snisliGidStr ( snisliname );
+                                                        if ( snisliname )
+                                                            free ( snisliname );
+                                                        snisliname = NULL;
+
+                                                        asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
+
+                                                        std::string snisliQuotaStr ( snisliname );
+                                                        if ( snisliname )
+                                                            free ( snisliname );
+                                                        snisliname = NULL;
+
+
+                                                        reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
+
+                                                        fullCmd4.clear();
+                                                        fullCmd4.append ( IPTABLES_PATH );
+                                                        fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
+                                                        reslt |= system_nosh ( fullCmd4.c_str() );
+
+                                                        fullCmd6.clear();
+                                                        fullCmd6.append ( IP6TABLES_PATH );
+                                                        fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
+                                                        reslt |= system_nosh ( fullCmd6.c_str() );
+
+                                                        reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
+
+                                                    }
+                                                }
+                                            }
+
+
+                                            /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
+                                                PckgObj tmpPckgObj ( *pcgSetit );
+                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                                                {
                                                     char *snisliname = NULL;
                                                     asprintf ( &snisliname, "%u", tmpPckgObj.uid );
                                                     std::string snisliUidStr ( snisliname );
@@ -1056,31 +1226,19 @@ void OEMListener::SrvrFunction()
                                                         free ( snisliname );
                                                     snisliname = NULL;
 
-                                                    asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
+                                                    asprintf ( &snisliname, "%u", tmpPckgObj.gid );
 
-                                                    std::string snisliQuotaStr ( snisliname );
+                                                    std::string snisliGidStr ( snisliname );
                                                     if ( snisliname )
                                                         free ( snisliname );
                                                     snisliname = NULL;
 
-
-                                                    reslt |= commonIpCmd ( " -N p30_" + snisliUidStr );
-
-                                                    fullCmd4.clear();
-                                                    fullCmd4.append ( IPTABLES_PATH );
-                                                    fullCmd4.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
-                                                    reslt |= system_nosh ( fullCmd4.c_str() );
-
-                                                    fullCmd6.clear();
-                                                    fullCmd6.append ( IP6TABLES_PATH );
-                                                    fullCmd6.append ( " -A p30_" + snisliUidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliUidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
-                                                    reslt |= system_nosh ( fullCmd6.c_str() );
-
-                                                    reslt |= commonIpCmd ( " -A p30_" + snisliUidStr + " --jump ACCEPT" );
-
-                                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliUidStr );
+                                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
                                                 }
                                             }
+
+                                            pckgGrpLst.clear();
+
 
                                             line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
                                             tmpDestStro.assign ( line );
@@ -1095,61 +1253,92 @@ void OEMListener::SrvrFunction()
 
                                         std::string tmpDestStro;
                                         tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
+
                                         size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
                                         {
                                             std::string line;
-                                            line.assign ( tmpDestStro,0,foundn );
-                                            char pckgname[128] = {'\0'};
                                             unsigned long long pckgqta = 0;
                                             int sscanfrslt = 0;
+                                            unsigned int groupid = 0;
+                                            line.assign ( tmpDestStro,0,foundn );
 
-                                            sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-                                            if ( sscanfrslt == 2 )
+                                            std::list<PckgObj> pckgGrpLst;
+                                            size_t foundspc = line.find ( " " );
+                                            while ( foundspc != std::string::npos && sscanfrslt < 2 )
                                             {
-                                                PckgObj tmpPckgObj ( pckgname,0, pckgqta );
-
-                                                for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                                char pckgname[128] = {'\0'};
+                                                sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                                if ( sscanfrslt == 2 )
                                                 {
-                                                    size_t found_srvpckg = it->package.find ( pckgname );
-                                                    if ( found_srvpckg != std::string::npos )
+                                                    PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                    break;
+                                                }
+                                                else
+                                                {
+                                                    sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
+                                                    if ( sscanfrslt == 1 )
                                                     {
-                                                        tmpPckgObj.uid = it->uid;
-                                                        break;
+                                                        std::string subline;
+                                                        subline.assign ( line, 0, foundspc );
+                                                        PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                        subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
+                                                        line.assign ( subline );
+                                                        foundspc = line.find ( " " );
                                                     }
                                                 }
+                                            }
 
-                                                if ( tmpPckgObj.uid > 0 )
-                                                {
-                                                    char * tmpStro = NULL;
-                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", tmpPckgObj.uid, tmpPckgObj.uid );
-                                                    reslt |= commonIpCmd ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-
-                                                    asprintf ( &tmpStro," -F p30_%u", it->uid );
-                                                    reslt |= commonIpCmd ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-
-
-                                                    asprintf ( &tmpStro," -X p30_%u", it->uid );
-                                                    reslt |= commonIpCmd ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-                                                }
-
+                                            std::set<std::string> chnXSet;
+                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                            {
                                                 for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                                 {
-                                                    size_t found_srvpckg = it->package.find ( tmpPckgObj.package );
+                                                    size_t found_srvpckg = it->package.find ( pcgSetit->package );
                                                     if ( found_srvpckg != std::string::npos )
                                                     {
+                                                        if ( it->uid > 0 )
+                                                        {
+                                                            if ( it->gid == it->uid )
+                                                            {
+                                                                groupid = it->gid;
+
+                                                                char * tmpStro = NULL;
+                                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                                if ( tmpStro )
+                                                                    free ( tmpStro );
+                                                                tmpStro = NULL;
+
+                                                                asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                                chnXSet.insert ( tmpStro );
+
+                                                                if ( tmpStro )
+                                                                    free ( tmpStro );
+                                                                tmpStro = NULL;
+
+                                                                asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                                chnXSet.insert ( tmpStro );
+
+                                                                if ( tmpStro )
+                                                                    free ( tmpStro );
+                                                                tmpStro = NULL;
+                                                            }
+                                                            else
+                                                            {
+                                                                char * tmpStro = NULL;
+                                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                                if ( tmpStro )
+                                                                    free ( tmpStro );
+                                                                tmpStro = NULL;
+                                                            }
+                                                        }
+
                                                         regPckgObjLst.erase ( it );
                                                         break;
                                                     }
@@ -1157,7 +1346,31 @@ void OEMListener::SrvrFunction()
 
                                             }
 
-                                            line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
+                                            bool grpUsd = false;
+                                            for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                            {
+                                                if ( it->gid == groupid )
+                                                {
+                                                    grpUsd = true;
+                                                    break;
+                                                }
+
+                                            }
+
+                                            if ( !grpUsd &&  groupid != 0 )
+                                            {
+                                                for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
+                                                {
+                                                    reslt |= commonIpCmd ( *it );
+                                                }
+                                            }
+
+                                            chnXSet.clear();
+
+                                            pckgGrpLst.clear();
+
+
+                                            line.assign ( tmpDestStro, foundn + 1 , tmpDestStro.size() - line.size() - 1 );
                                             tmpDestStro.assign ( line );
                                             foundn = tmpDestStro.find ( "," );
                                         }
