@@ -67,6 +67,7 @@ public:
     int defStr ( std::string srcStr, FILE *dest );
     std::string DeflateString ( const std::string& str );
     std::string urlEncode ( std::string regstr );
+    std::string trimLdWSpce ( std::string regstr );
 private:
     bool stopFuncs;
     std::string prvUzlibdStr;

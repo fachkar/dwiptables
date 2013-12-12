@@ -402,6 +402,27 @@ std::string OEMListener::urlEncode ( std::string regstr )
     return tmpStr;
 }
 
+std::string OEMListener::trimLdWSpce ( std::string regstr )
+{
+    std::string tmpStr ( regstr );
+    size_t fnws = regstr.find_first_not_of ( " " );
+    size_t fnt = regstr.find_first_not_of ( "\t" );
+
+    while ( ( fnws != 0 && fnws != std::string::npos ) || ( fnt !=0 && fnt != std::string::npos ) )
+    {
+        tmpStr.assign ( regstr, fnws, regstr.size() - fnws );
+        regstr.assign ( tmpStr );
+
+        tmpStr.assign ( regstr, fnt, regstr.size() - fnt );
+        regstr.assign ( tmpStr );
+
+        fnws = regstr.find_first_not_of ( " " );
+        fnt = regstr.find_first_not_of ( "\t" );
+    }
+
+    return tmpStr;
+}
+
 void OEMListener::SrvrFunction()
 {
 
@@ -926,6 +947,7 @@ void OEMListener::SrvrFunction()
                                         std::set<std::string> chnXSet;
                                         for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
+                                            LOGD ( " -- -- -- %s:%d -- package:%s, uid:%u, gid:%u, clq:%llu", __func__, __LINE__, it->package.c_str(), it->uid, it->gid, it->clq );
                                             if ( it-> uid > 0 )
                                             {
                                                 if ( it->gid == it->uid )
@@ -975,7 +997,7 @@ void OEMListener::SrvrFunction()
                                         regPckgObjLst.clear();
 
                                         std::string tmpDestStro;
-                                        tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
+                                        tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
 
                                         size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
@@ -994,8 +1016,11 @@ void OEMListener::SrvrFunction()
                                                 sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
                                                 if ( sscanfrslt == 2 )
                                                 {
-                                                    PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
-                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                    if ( strlen ( pckgname ) > 4 )
+                                                    {
+                                                        PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                    }
                                                     break;
                                                 }
                                                 else
@@ -1005,8 +1030,11 @@ void OEMListener::SrvrFunction()
                                                     {
                                                         std::string subline;
                                                         subline.assign ( line, 0, foundspc );
-                                                        PckgObj tmpPckgObj ( subline, 0, 0, 0 );
-                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                        if ( subline.size() > 4 )
+                                                        {
+                                                            PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                            pckgGrpLst.push_back ( tmpPckgObj );
+                                                        }
                                                         subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
                                                         line.assign ( subline );
                                                         foundspc = line.find ( " " );
@@ -1034,6 +1062,7 @@ void OEMListener::SrvrFunction()
                                             {
                                                 pcgSetit->gid = groupid;
                                                 PckgObj tmpPckgObj ( *pcgSetit );
+                                                LOGD ( " -- -- -- %s:%d -- package:%s, uid:%u, gid:%u, clq:%llu", __func__, __LINE__, tmpPckgObj.package.c_str(), tmpPckgObj.uid, tmpPckgObj.gid, tmpPckgObj.clq );
                                                 regPckgObjLst.push_back ( tmpPckgObj );
 
                                                 if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
@@ -1115,7 +1144,7 @@ void OEMListener::SrvrFunction()
                                         pthread_mutex_lock ( &count_mutex );
 
                                         std::string tmpDestStro;
-                                        tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
+                                        tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
 
                                         size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
@@ -1134,8 +1163,11 @@ void OEMListener::SrvrFunction()
                                                 sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
                                                 if ( sscanfrslt == 2 )
                                                 {
-                                                    PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
-                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                    if ( strlen ( pckgname ) > 4 )
+                                                    {
+                                                        PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                    }
                                                     break;
                                                 }
                                                 else
@@ -1145,8 +1177,11 @@ void OEMListener::SrvrFunction()
                                                     {
                                                         std::string subline;
                                                         subline.assign ( line, 0, foundspc );
-                                                        PckgObj tmpPckgObj ( subline, 0, 0, 0 );
-                                                        pckgGrpLst.push_back ( tmpPckgObj );
+                                                        if ( subline.size() > 4 )
+                                                        {
+                                                            PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                            pckgGrpLst.push_back ( tmpPckgObj );
+                                                        }
                                                         subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
                                                         line.assign ( subline );
                                                         foundspc = line.find ( " " );
@@ -1255,7 +1290,7 @@ void OEMListener::SrvrFunction()
                                         pthread_mutex_lock ( &count_mutex );
 
                                         std::string tmpDestStro;
-                                        tmpDestStro.assign ( srvValStrs["dw-usageinfo:"] );
+                                        tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
 
                                         size_t foundn = tmpDestStro.find ( "," );
                                         while ( foundn != std::string::npos )
