@@ -28,9 +28,9 @@
 class PckgObj
 {
 public:
-    PckgObj ( std::string pckgname = "", unsigned int puid = 0, unsigned int guid = 0, unsigned long long qta = 0 ) :package ( pckgname ),uid ( puid ), gid (guid) ,clq ( qta ){}
+    PckgObj ( std::string pckgname = "", unsigned int puid = 0, unsigned int guid = 0, unsigned long long qta = 0 ) :package ( pckgname ),uid ( puid ), gid ( guid ) ,clq ( qta ) {}
     ~PckgObj() {}
-    PckgObj ( const PckgObj& cctor ) :package ( cctor.package ),uid ( cctor.uid ), gid (cctor.gid), clq ( cctor.clq ){}
+    PckgObj ( const PckgObj& cctor ) :package ( cctor.package ),uid ( cctor.uid ), gid ( cctor.gid ), clq ( cctor.clq ) {}
     PckgObj& operator= ( const PckgObj& assign_opt )
     {
         if ( this == &assign_opt )
@@ -66,7 +66,7 @@ public:
     int infStr ( FILE *source, std::string& rtrnStr );
     int defStr ( std::string srcStr, FILE *dest );
     std::string DeflateString ( const std::string& str );
-    std::string urlEncode(std::string regstr);
+    std::string urlEncode ( std::string regstr );
 private:
     bool stopFuncs;
     std::string prvUzlibdStr;

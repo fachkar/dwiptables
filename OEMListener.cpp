@@ -322,8 +322,8 @@ void OEMListener::CountFunction()
     {
         std::string tmpUzlibdStr;
         pthread_mutex_lock ( &count_mutex );
-        std::list<PckgObj>::iterator it;
-        for ( it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+
+        for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
         {
             // have prv quota
             FILE *fp = NULL;
@@ -585,7 +585,7 @@ void OEMListener::SrvrFunction()
                                 PckgObj tmpPckgObj ( pckgname, pckguid, pckggid, pckgqta );
                                 regPckgObjLst.push_back ( tmpPckgObj );
 
-                                if ( usagedataStrMap.find ( tmpPckgObj.gid ) != std::map::end )
+                                if ( usagedataStrMap.find ( tmpPckgObj.gid ) != usagedataStrMap.end() )
                                 {
                                     std::string usagedataStr;
                                     usagedataStr.append ( tmpPckgObj.package );
@@ -706,6 +706,12 @@ void OEMListener::SrvrFunction()
 
                         bodyChunk.memory = ( char* ) malloc ( 1 );
                         bodyChunk.size = 0;
+
+                        std::string usagedataStr;
+                        for ( std::map<unsigned int, std::string>::iterator udsit = usagedataStrMap.begin(); udsit != usagedataStrMap.end(); ++udsit )
+                        {
+                            usagedataStr.append ( udsit->second );
+                        }
 
                         asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, urlEncode ( brandvalue ).c_str(), urlEncode ( modelvalue ).c_str() );
 
@@ -834,31 +840,45 @@ void OEMListener::SrvrFunction()
                                     if ( srvValStrs["dw-restrict:"].find ( "no" ) != std::string::npos )
                                     {
                                         pthread_mutex_lock ( &count_mutex );
-                                        std::list<PckgObj>::iterator it;
-                                        for ( it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+
+                                        for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
-                                            char * tmpStro = NULL;
-                                            asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->uid );
-                                            reslt |= commonIpCmd ( tmpStro );
+                                            if ( it->gid == it->uid )
+                                            {
+                                                char * tmpStro = NULL;
+                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                reslt |= commonIpCmd ( tmpStro );
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
 
-                                            asprintf ( &tmpStro," -F p30_%u", it->uid );
-                                            reslt |= commonIpCmd ( tmpStro );
+                                                asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                reslt |= commonIpCmd ( tmpStro );
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
 
 
-                                            asprintf ( &tmpStro," -X p30_%u", it->uid );
-                                            reslt |= commonIpCmd ( tmpStro );
+                                                asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                reslt |= commonIpCmd ( tmpStro );
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+                                            }
+                                            else
+                                            {
+                                                char * tmpStro = NULL;
+                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+                                            }
+
 
                                         }
 
@@ -870,34 +890,54 @@ void OEMListener::SrvrFunction()
 
                                         /// remove previous data
                                         pthread_mutex_lock ( &count_mutex );
-                                        std::list<PckgObj>::iterator it;
-                                        for ( it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                        std::set<std::string> chnXSet;
+                                        for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
-                                            char * tmpStro = NULL;
-                                            asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->uid );
-                                            reslt |= commonIpCmd ( tmpStro );
+                                            if ( it->gid == it->uid )
+                                            {
+                                                char * tmpStro = NULL;
+                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                reslt |= commonIpCmd ( tmpStro );
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
 
-                                            asprintf ( &tmpStro," -F p30_%u", it->uid );
-                                            reslt |= commonIpCmd ( tmpStro );
+                                                asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                chnXSet.insert ( tmpStro );
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
 
 
-                                            asprintf ( &tmpStro," -X p30_%u", it->uid );
-                                            reslt |= commonIpCmd ( tmpStro );
+                                                asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                chnXSet.insert ( tmpStro );
 
-                                            if ( tmpStro )
-                                                free ( tmpStro );
-                                            tmpStro = NULL;
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+                                            }
+                                            else
+                                            {
+                                                char * tmpStro = NULL;
+                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                reslt |= commonIpCmd ( tmpStro );
+
+                                                if ( tmpStro )
+                                                    free ( tmpStro );
+                                                tmpStro = NULL;
+                                            }
+
 
                                         }
 
+                                        for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
+                                        {
+                                            reslt |= commonIpCmd ( *it );
+                                        }
+
+                                        chnXSet.clear();
                                         regPckgObjLst.clear();
 
                                         std::string tmpDestStro;
@@ -916,8 +956,7 @@ void OEMListener::SrvrFunction()
                                             if ( sscanfrslt == 2 )
                                             {
                                                 PckgObj tmpPckgObj ( pckgname,0, pckgqta );
-                                                std::list<PckgObj>::iterator it;
-                                                for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                                for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                                 {
                                                     size_t found_srvpckg = it->package.find ( pckgname );
                                                     if ( found_srvpckg != std::string::npos )
@@ -990,8 +1029,7 @@ void OEMListener::SrvrFunction()
                                             if ( sscanfrslt == 2 )
                                             {
                                                 PckgObj tmpPckgObj ( pckgname,0, pckgqta );
-                                                std::list<PckgObj>::iterator it;
-                                                for ( it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                                for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
                                                 {
                                                     size_t found_srvpckg = it->package.find ( pckgname );
                                                     if ( found_srvpckg != std::string::npos )
@@ -1065,8 +1103,7 @@ void OEMListener::SrvrFunction()
                                             {
                                                 PckgObj tmpPckgObj ( pckgname,0, pckgqta );
 
-                                                std::list<PckgObj>::iterator it;
-                                                for ( it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                                for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                                 {
                                                     size_t found_srvpckg = it->package.find ( pckgname );
                                                     if ( found_srvpckg != std::string::npos )
@@ -1102,7 +1139,7 @@ void OEMListener::SrvrFunction()
                                                     tmpStro = NULL;
                                                 }
 
-                                                for ( it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                                for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                                 {
                                                     size_t found_srvpckg = it->package.find ( tmpPckgObj.package );
                                                     if ( found_srvpckg != std::string::npos )
