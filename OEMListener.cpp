@@ -937,6 +937,10 @@ void OEMListener::SrvrFunction()
                                         chnXSet.clear();
                                         regPckgObjLst.clear();
 
+                                        reslt |= commonIpCmd ( " -F p30dw" );
+
+                                        reslt |= commonIpCmd ( " -I p30dw 1 --jump ACCEPT" );
+
                                         pthread_mutex_unlock ( &count_mutex );
                                     }
                                     else if ( srvValStrs["dw-restrict:"].find ( "new" ) != std::string::npos )
