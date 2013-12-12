@@ -841,6 +841,7 @@ void OEMListener::SrvrFunction()
                                     {
                                         pthread_mutex_lock ( &count_mutex );
 
+                                        std::set<std::string> chnXSet;
                                         for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                         {
                                             if ( it->gid == it->uid )
@@ -854,7 +855,7 @@ void OEMListener::SrvrFunction()
                                                 tmpStro = NULL;
 
                                                 asprintf ( &tmpStro," -F p30_%u", it->gid );
-                                                reslt |= commonIpCmd ( tmpStro );
+                                                chnXSet.insert ( tmpStro );
 
                                                 if ( tmpStro )
                                                     free ( tmpStro );
@@ -862,7 +863,7 @@ void OEMListener::SrvrFunction()
 
 
                                                 asprintf ( &tmpStro," -X p30_%u", it->gid );
-                                                reslt |= commonIpCmd ( tmpStro );
+                                                chnXSet.insert ( tmpStro );
 
                                                 if ( tmpStro )
                                                     free ( tmpStro );
@@ -882,12 +883,18 @@ void OEMListener::SrvrFunction()
 
                                         }
 
+                                        for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
+                                        {
+                                            reslt |= commonIpCmd ( *it );
+                                        }
+
+                                        chnXSet.clear();
                                         regPckgObjLst.clear();
+
                                         pthread_mutex_unlock ( &count_mutex );
                                     }
                                     else if ( srvValStrs["dw-restrict:"].find ( "new" ) != std::string::npos )
                                     {
-
                                         /// remove previous data
                                         pthread_mutex_lock ( &count_mutex );
                                         std::set<std::string> chnXSet;
@@ -928,7 +935,6 @@ void OEMListener::SrvrFunction()
                                                     free ( tmpStro );
                                                 tmpStro = NULL;
                                             }
-
 
                                         }
 
