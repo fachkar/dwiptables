@@ -17,6 +17,7 @@
 #ifndef _OEMLISTENER_H__
 #define _OEMLISTENER_H__
 
+#include <cstdio>
 #include <string>
 #include <list>
 #include<map>

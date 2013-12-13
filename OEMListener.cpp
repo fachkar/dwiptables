@@ -48,6 +48,83 @@ extern "C" int system_nosh ( const char *command );
 
 extern "C"
 {
+    static const char cd64[]="|$$$}rstuvwxyz{$$$$$$$>?@ABCDEFGHIJKLMNOPQRSTUVW$$$$$$XYZ[\\]^_`abcdefghijklmnopq";
+
+    static char *cfgoutbuffer = NULL;
+    static void decodeblock ( unsigned char *in, unsigned char *out )
+    {
+        out[ 0 ] = ( unsigned char ) ( in[0] << 2 | in[1] >> 4 );
+        out[ 1 ] = ( unsigned char ) ( in[1] << 4 | in[2] >> 2 );
+        out[ 2 ] = ( unsigned char ) ( ( ( in[2] << 6 ) & 0xc0 ) | in[3] );
+    }
+
+    static int decode ( FILE *infile )
+    {
+        int retcode = 0;
+        unsigned char in[4];
+        unsigned char out[3];
+        int v;
+        int i, len;
+
+        *in = ( unsigned char ) 0;
+        *out = ( unsigned char ) 0;
+        while ( feof ( infile ) == 0 )
+        {
+            for ( len = 0, i = 0; i < 4 && feof ( infile ) == 0; i++ )
+            {
+                v = 0;
+                while ( feof ( infile ) == 0 && v == 0 )
+                {
+                    v = getc ( infile );
+                    if ( v != EOF )
+                    {
+                        v = ( ( v < 43 || v > 122 ) ? 0 : ( int ) cd64[ v - 43 ] );
+                        if ( v != 0 )
+                        {
+                            v = ( ( v == ( int ) '$' ) ? 0 : v - 61 );
+                        }
+                    }
+                }
+                if ( feof ( infile ) == 0 )
+                {
+                    len++;
+                    if ( v != 0 )
+                    {
+                        in[ i ] = ( unsigned char ) ( v - 1 );
+                    }
+                }
+                else
+                {
+                    in[i] = ( unsigned char ) 0;
+                }
+            }
+            if ( len > 0 )
+            {
+                decodeblock ( in, out );
+                for ( i = 0; i < len - 1; i++ )
+                {
+                    char * tmpout = NULL;
+                    if ( cfgoutbuffer != NULL )
+                    {
+                        asprintf ( &tmpout, "%s", cfgoutbuffer );
+                        free ( cfgoutbuffer );
+                        cfgoutbuffer = NULL;
+
+                        asprintf ( &cfgoutbuffer, "%s%c", tmpout, out[i] );
+                        free ( tmpout );
+                        tmpout = NULL;
+                    }
+                    else
+                    {
+                        asprintf ( &cfgoutbuffer, "%c", out[i] );
+                    }
+                }
+            }
+        }
+
+        return ( retcode );
+    }
+
     struct MemoryStruct
     {
         char *memory;
@@ -115,7 +192,6 @@ OEMListener::OEMListener() :stopFuncs ( false ), prvUzlibdStr ( "" )
         return;
     }
 }
-
 
 int OEMListener::defStr ( std::string srcStr, FILE *dest )
 {
@@ -737,729 +813,761 @@ void OEMListener::SrvrFunction()
                 pthread_cond_signal ( &condition_var );
 
                 // con to server
-                char serialvalue[PROPERTY_VALUE_MAX] = {'\0'};
-                property_get ( "ro.serialno", serialvalue, "unknown" );
-
-                if ( strlen ( serialvalue ) == 16 && strstr ( serialvalue, "P314" ) != NULL )
+                bool found_cnfgdt = false;
+                int cnfgdtcounter = 0;
+                while ( ( !found_cnfgdt ) && cnfgdtcounter < 120 )
                 {
-                    char brandvalue[PROPERTY_VALUE_MAX] = {'\0'};
-                    property_get ( "ro.product.brand", brandvalue, "unknown" );
+                    FILE * pcfgdtFile;
+                    pcfgdtFile = fopen ( "/data/data/com.datawind.info/files/configdata" , "rb" );
 
-                    char modelvalue[PROPERTY_VALUE_MAX] = {'\0'};
-                    property_get ( "ro.product.model", modelvalue, "unknown" );
-
-
-                    CURLcode res = CURLE_COULDNT_CONNECT;
-
-                    while ( ( res > CURLE_COULDNT_RESOLVE_PROXY ) && ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
+                    if ( pcfgdtFile!=NULL )
                     {
-                        CURL *curl = NULL;
-                        char *postrequest = NULL;
-                        char *response = NULL;
-                        struct MemoryStruct chunk;
-                        struct MemoryStruct bodyChunk;
-                        chunk.memory = ( char* ) malloc ( 1 );
-                        chunk.size = 0;
+                        found_cnfgdt = true;
 
-                        bodyChunk.memory = ( char* ) malloc ( 1 );
-                        bodyChunk.size = 0;
-
-                        std::string usagedataStr;
-                        for ( std::map<unsigned int, std::string>::iterator udsit = usagedataStrMap.begin(); udsit != usagedataStrMap.end(); ++udsit )
+                        decode ( pcfgdtFile );
+                        std::list<std::string> serialBrndMdlStrLst;
+                        char * pch = strtok ( cfgoutbuffer,"," );
+                        while ( pch != NULL )
                         {
-                            usagedataStr.append ( udsit->second );
+                            std::string tmpStr ( pch );
+                            serialBrndMdlStrLst.push_back ( tmpStr );
+                            pch = strtok ( NULL, "," );
                         }
 
-                        asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialvalue, urlEncode ( brandvalue ).c_str(), urlEncode ( modelvalue ).c_str() );
-
-                        LOGD ( " -- -- %s , %s", __func__, postrequest );
-
-                        curl_global_init ( CURL_GLOBAL_ALL );
-                        curl = curl_easy_init();
-
-                        if ( curl )
+                        if ( cfgoutbuffer )
                         {
-                            curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
-                            curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
-                            curl_easy_setopt ( curl, CURLOPT_SSL_VERIFYPEER, 0 );
-                            //curl_easy_setopt ( curl, CURLOPT_CAINFO, "/system/etc/security/ca-bundle.crt");
-                            curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
-                            curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
-                            curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
-                            curl_easy_setopt ( curl, CURLOPT_WRITEHEADER, ( void * ) &chunk );
-                            curl_easy_setopt ( curl,  CURLOPT_WRITEFUNCTION, WriteMemoryCallback );
-                            curl_easy_setopt ( curl, CURLOPT_WRITEDATA, ( void * ) &bodyChunk );
-                            curl_easy_setopt ( curl, CURLOPT_USERAGENT, "libcurl-agent/1.0" );
+                            free ( cfgoutbuffer );
+                            cfgoutbuffer = NULL;
+                        }
 
-                            res = curl_easy_perform ( curl );
+                        std::string serialStr, brandStr, modelStr;
+                        serialStr.assign ( serialBrndMdlStrLst.front() );
+                        serialBrndMdlStrLst.pop_front();
+                        brandStr.assign ( serialBrndMdlStrLst.front() );
+                        serialBrndMdlStrLst.pop_front();
+                        modelStr.assign ( serialBrndMdlStrLst.front() );
 
-                            if ( ( res != CURLE_OK ) )
+                        serialBrndMdlStrLst.clear();
+
+                        if ( ( serialStr.size() == 16 ) && ( serialStr.find ( "P314" ) != std::string::npos ) )
+                        {
+                            CURLcode res = CURLE_COULDNT_CONNECT;
+
+                            while ( ( res > CURLE_COULDNT_RESOLVE_PROXY ) && ( res < CURLE_FTP_WEIRD_SERVER_REPLY ) )
                             {
-                                LOGE ( " ## ## %s res:%d", __func__, res );
+                                CURL *curl = NULL;
+                                char *postrequest = NULL;
+                                char *response = NULL;
+                                struct MemoryStruct chunk;
+                                struct MemoryStruct bodyChunk;
+                                chunk.memory = ( char* ) malloc ( 1 );
+                                chunk.size = 0;
 
-                                curl_easy_cleanup ( curl );
+                                bodyChunk.memory = ( char* ) malloc ( 1 );
+                                bodyChunk.size = 0;
 
-
-                                if ( chunk.memory )
-                                    free ( chunk.memory );
-                                chunk.memory = NULL;
-                                if ( bodyChunk.memory )
-                                    free ( bodyChunk.memory );
-                                bodyChunk.memory = NULL;
-
-                                if ( postrequest )
-                                    free ( postrequest );
-                                postrequest = NULL;
-                                if ( response )
-                                    free ( response );
-                                response = NULL;
-
-                                curl_global_cleanup();
-
-                                usleep ( 50000000 );
-
-                            }
-                            else
-                            {
-                                asprintf ( &response,"%s",chunk.memory );
-
-                                LOGD ( " -- -- %s , %s", __func__, response );
-
-                                /// got respond
-
-                                std::string tmpSrvrResp;
-
-                                tmpSrvrResp.append ( response );
-
-                                curl_easy_cleanup ( curl );
-
-                                if ( chunk.memory )
-                                    free ( chunk.memory );
-                                chunk.memory = NULL;
-                                if ( bodyChunk.memory )
-                                    free ( bodyChunk.memory );
-                                bodyChunk.memory = NULL;
-
-                                if ( postrequest )
-                                    free ( postrequest );
-                                postrequest = NULL;
-                                if ( response )
-                                    free ( response );
-                                response = NULL;
-
-                                curl_global_cleanup();
-
-                                /// dw-messages:
-                                std::set<std::string> srvStrs;
-                                std::map<std::string, std::string> srvValStrs;
-
-                                srvStrs.insert ( "dw-message:" );
-                                srvStrs.insert ( "dw-error:" );
-                                srvStrs.insert ( "dw-usageinfo:" );
-                                srvStrs.insert ( "dw-compression:" );
-                                srvStrs.insert ( "dw-usermessage:" );
-                                srvStrs.insert ( "dw-restrict:" );
-
-                                std::string srvmsg, srvnr;
-                                srvmsg.assign ( *srvStrs.begin() );
-                                srvnr.assign ( "\r\n" );
-                                size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
-
-                                while ( ( found_srvmsg != std::string::npos ) && ( !srvStrs.empty() ) )
+                                std::string usagedataStr;
+                                for ( std::map<unsigned int, std::string>::iterator udsit = usagedataStrMap.begin(); udsit != usagedataStrMap.end(); ++udsit )
                                 {
-                                    srvmsg.assign ( *srvStrs.begin() );
-                                    srvnr.assign ( "\r\n" );
-
-                                    size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
-                                    if ( found_srvmsg != std::string::npos )
-                                    {
-
-                                        size_t found_srvmsg_nr = tmpSrvrResp.find ( srvnr,  found_srvmsg + srvmsg.size() );
-                                        if ( found_srvmsg_nr != std::string::npos )
-                                        {
-
-                                            std::string tmpStr;
-                                            tmpStr.assign ( tmpSrvrResp, found_srvmsg + srvmsg.size(), found_srvmsg_nr - ( found_srvmsg + srvmsg.size() ) );
-                                            srvValStrs.insert ( std::pair<std::string, std::string> ( srvmsg,tmpStr ) );
-
-                                            srvStrs.erase ( srvmsg );
-                                        }
-                                        else
-                                        {
-                                            break;
-                                        }
-                                    }
-
+                                    usagedataStr.append ( udsit->second );
                                 }
 
-                                if ( srvValStrs["dw-message:"].find ( "Success" ) && srvValStrs["dw-error:"].find ( "0" ) )
+                                asprintf ( &postrequest, "clientid=dwtablet&action=submit&data=%s&compression=no&oldinfo=%s&serialid=%s&brand=%s&model=%s", usagedataStr.c_str() , ( usagedataStr.empty() ?"no":"yes" ), serialStr.c_str(), urlEncode ( brandStr ).c_str(), urlEncode ( modelStr ).c_str() );
+
+                                LOGD ( " -- -- %s , %s", __func__, postrequest );
+
+                                curl_global_init ( CURL_GLOBAL_ALL );
+                                curl = curl_easy_init();
+
+                                if ( curl )
                                 {
-                                    if ( srvValStrs["dw-restrict:"].find ( "no" ) != std::string::npos )
+                                    curl_easy_setopt ( curl, CURLOPT_URL, "https://support.datawind-s.com/datausage/dataconfig.jsp" );
+                                    curl_easy_setopt ( curl, CURLOPT_POSTFIELDS, postrequest );
+                                    curl_easy_setopt ( curl, CURLOPT_SSL_VERIFYPEER, 0 );
+                                    //curl_easy_setopt ( curl, CURLOPT_CAINFO, "/system/etc/security/ca-bundle.crt");
+                                    curl_easy_setopt ( curl, CURLOPT_NOPROGRESS, 1 );
+                                    curl_easy_setopt ( curl, CURLOPT_VERBOSE, 0 );
+                                    curl_easy_setopt ( curl, CURLOPT_HEADERFUNCTION, WriteMemoryCallback );
+                                    curl_easy_setopt ( curl, CURLOPT_WRITEHEADER, ( void * ) &chunk );
+                                    curl_easy_setopt ( curl,  CURLOPT_WRITEFUNCTION, WriteMemoryCallback );
+                                    curl_easy_setopt ( curl, CURLOPT_WRITEDATA, ( void * ) &bodyChunk );
+                                    curl_easy_setopt ( curl, CURLOPT_USERAGENT, "libcurl-agent/1.0" );
+
+                                    res = curl_easy_perform ( curl );
+
+                                    if ( ( res != CURLE_OK ) )
                                     {
-                                        pthread_mutex_lock ( &count_mutex );
+                                        LOGE ( " ## ## %s res:%d", __func__, res );
 
-                                        /// triva da bide set, guarantees -F avant -X
-                                        std::set<std::string> chnXSet;
-                                        for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
-                                        {
-                                            if ( it->uid > 0 )
-                                            {
-                                                if ( it->gid == it->uid )
-                                                {
-                                                    char * tmpStro = NULL;
-                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                    reslt |= commonIpCmd ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-
-                                                    asprintf ( &tmpStro," -F p30_%u", it->gid );
-                                                    chnXSet.insert ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
+                                        curl_easy_cleanup ( curl );
 
 
-                                                    asprintf ( &tmpStro," -X p30_%u", it->gid );
-                                                    chnXSet.insert ( tmpStro );
+                                        if ( chunk.memory )
+                                            free ( chunk.memory );
+                                        chunk.memory = NULL;
+                                        if ( bodyChunk.memory )
+                                            free ( bodyChunk.memory );
+                                        bodyChunk.memory = NULL;
 
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-                                                }
-                                                else
-                                                {
-                                                    char * tmpStro = NULL;
-                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                    reslt |= commonIpCmd ( tmpStro );
+                                        if ( postrequest )
+                                            free ( postrequest );
+                                        postrequest = NULL;
+                                        if ( response )
+                                            free ( response );
+                                        response = NULL;
 
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-                                                }
-                                            }
-                                        }
+                                        curl_global_cleanup();
 
-                                        for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
-                                        {
-                                            reslt |= commonIpCmd ( *it );
-                                        }
+                                        usleep ( 50000000 );
 
-                                        chnXSet.clear();
-                                        regPckgObjLst.clear();
-
-                                        reslt |= commonIpCmd ( " -F p30dw" );
-
-                                        reslt |= commonIpCmd ( " -I p30dw 1 --jump ACCEPT" );
-
-                                        pthread_mutex_unlock ( &count_mutex );
                                     }
-                                    else if ( srvValStrs["dw-restrict:"].find ( "new" ) != std::string::npos )
+                                    else
                                     {
-                                        /// remove previous data
-                                        pthread_mutex_lock ( &count_mutex );
+                                        asprintf ( &response,"%s",chunk.memory );
 
-                                        std::set<std::string> chnXSet;
-                                        for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                        LOGD ( " -- -- %s , %s", __func__, response );
+
+                                        /// got respond
+
+                                        std::string tmpSrvrResp;
+
+                                        tmpSrvrResp.append ( response );
+
+                                        curl_easy_cleanup ( curl );
+
+                                        if ( chunk.memory )
+                                            free ( chunk.memory );
+                                        chunk.memory = NULL;
+                                        if ( bodyChunk.memory )
+                                            free ( bodyChunk.memory );
+                                        bodyChunk.memory = NULL;
+
+                                        if ( postrequest )
+                                            free ( postrequest );
+                                        postrequest = NULL;
+                                        if ( response )
+                                            free ( response );
+                                        response = NULL;
+
+                                        curl_global_cleanup();
+
+                                        /// dw-messages:
+                                        std::set<std::string> srvStrs;
+                                        std::map<std::string, std::string> srvValStrs;
+
+                                        srvStrs.insert ( "dw-message:" );
+                                        srvStrs.insert ( "dw-error:" );
+                                        srvStrs.insert ( "dw-usageinfo:" );
+                                        srvStrs.insert ( "dw-compression:" );
+                                        srvStrs.insert ( "dw-usermessage:" );
+                                        srvStrs.insert ( "dw-restrict:" );
+
+                                        std::string srvmsg, srvnr;
+                                        srvmsg.assign ( *srvStrs.begin() );
+                                        srvnr.assign ( "\r\n" );
+                                        size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
+
+                                        while ( ( found_srvmsg != std::string::npos ) && ( !srvStrs.empty() ) )
                                         {
-                                            LOGD ( " -- -- -- %s:%d -- package:%s, uid:%u, gid:%u, clq:%llu", __func__, __LINE__, it->package.c_str(), it->uid, it->gid, it->clq );
-                                            if ( it-> uid > 0 )
+                                            srvmsg.assign ( *srvStrs.begin() );
+                                            srvnr.assign ( "\r\n" );
+
+                                            size_t found_srvmsg = tmpSrvrResp.find ( srvmsg );
+                                            if ( found_srvmsg != std::string::npos )
                                             {
-                                                if ( it->gid == it->uid )
+
+                                                size_t found_srvmsg_nr = tmpSrvrResp.find ( srvnr,  found_srvmsg + srvmsg.size() );
+                                                if ( found_srvmsg_nr != std::string::npos )
                                                 {
-                                                    char * tmpStro = NULL;
-                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                    reslt |= commonIpCmd ( tmpStro );
 
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
+                                                    std::string tmpStr;
+                                                    tmpStr.assign ( tmpSrvrResp, found_srvmsg + srvmsg.size(), found_srvmsg_nr - ( found_srvmsg + srvmsg.size() ) );
+                                                    srvValStrs.insert ( std::pair<std::string, std::string> ( srvmsg,tmpStr ) );
 
-                                                    asprintf ( &tmpStro," -F p30_%u", it->gid );
-                                                    chnXSet.insert ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-
-
-                                                    asprintf ( &tmpStro," -X p30_%u", it->gid );
-                                                    chnXSet.insert ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
+                                                    srvStrs.erase ( srvmsg );
                                                 }
                                                 else
                                                 {
-                                                    char * tmpStro = NULL;
-                                                    asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                    reslt |= commonIpCmd ( tmpStro );
-
-                                                    if ( tmpStro )
-                                                        free ( tmpStro );
-                                                    tmpStro = NULL;
-                                                }
-                                            }
-                                        }
-
-                                        for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
-                                        {
-                                            reslt |= commonIpCmd ( *it );
-                                        }
-
-                                        chnXSet.clear();
-                                        regPckgObjLst.clear();
-
-                                        std::string tmpDestStro;
-                                        tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
-
-                                        size_t foundn = tmpDestStro.find ( "," );
-                                        while ( foundn != std::string::npos )
-                                        {
-                                            std::string line;
-                                            unsigned long long pckgqta = 0;
-                                            int sscanfrslt = 0;
-
-                                            line.assign ( tmpDestStro,0,foundn );
-
-                                            std::list<PckgObj> pckgGrpLst;
-                                            size_t foundspc = line.find ( " " );
-                                            while ( foundspc != std::string::npos && sscanfrslt < 2 )
-                                            {
-                                                char pckgname[128] = {'\0'};
-                                                sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-                                                if ( sscanfrslt == 2 )
-                                                {
-                                                    if ( strlen ( pckgname ) > 4 )
-                                                    {
-                                                        PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
-                                                        pckgGrpLst.push_back ( tmpPckgObj );
-                                                    }
                                                     break;
                                                 }
-                                                else
-                                                {
-                                                    sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
-                                                    if ( sscanfrslt == 1 )
-                                                    {
-                                                        std::string subline;
-                                                        subline.assign ( line, 0, foundspc );
-                                                        if ( subline.size() > 4 )
-                                                        {
-                                                            PckgObj tmpPckgObj ( subline, 0, 0, 0 );
-                                                            pckgGrpLst.push_back ( tmpPckgObj );
-                                                        }
-                                                        subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
-                                                        line.assign ( subline );
-                                                        foundspc = line.find ( " " );
-                                                    }
-                                                }
                                             }
 
-                                            unsigned int groupid = 0;
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
-                                                pcgSetit->clq = pckgqta;
-                                                for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
-                                                {
-                                                    size_t found_srvpckg = it->package.find ( pcgSetit->package );
-                                                    if ( found_srvpckg != std::string::npos )
-                                                    {
-                                                        pcgSetit->uid = it->uid;
-                                                        groupid = it->uid;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
-                                                pcgSetit->gid = groupid;
-                                                PckgObj tmpPckgObj ( *pcgSetit );
-                                                LOGD ( " -- -- -- %s:%d -- package:%s, uid:%u, gid:%u, clq:%llu", __func__, __LINE__, tmpPckgObj.package.c_str(), tmpPckgObj.uid, tmpPckgObj.gid, tmpPckgObj.clq );
-                                                regPckgObjLst.push_back ( tmpPckgObj );
-
-                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
-                                                {
-
-                                                    if ( tmpPckgObj.gid == tmpPckgObj.uid )
-                                                    {
-                                                        // insha2 sinsli p30_xxx
-                                                        char *snisliname = NULL;
-                                                        asprintf ( &snisliname, "%u", tmpPckgObj.gid );
-                                                        std::string snisliGidStr ( snisliname );
-                                                        if ( snisliname )
-                                                            free ( snisliname );
-                                                        snisliname = NULL;
-
-                                                        asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
-
-                                                        std::string snisliQuotaStr ( snisliname );
-                                                        if ( snisliname )
-                                                            free ( snisliname );
-                                                        snisliname = NULL;
-
-
-                                                        reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
-
-                                                        fullCmd4.clear();
-                                                        fullCmd4.append ( IPTABLES_PATH );
-                                                        fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
-                                                        reslt |= system_nosh ( fullCmd4.c_str() );
-
-                                                        fullCmd6.clear();
-                                                        fullCmd6.append ( IP6TABLES_PATH );
-                                                        fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
-                                                        reslt |= system_nosh ( fullCmd6.c_str() );
-
-                                                        reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
-
-                                                    }
-                                                }
-                                            }
-
-
-                                            /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
-                                                PckgObj tmpPckgObj ( *pcgSetit );
-                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
-                                                {
-                                                    char *snisliname = NULL;
-                                                    asprintf ( &snisliname, "%u", tmpPckgObj.uid );
-                                                    std::string snisliUidStr ( snisliname );
-                                                    if ( snisliname )
-                                                        free ( snisliname );
-                                                    snisliname = NULL;
-
-                                                    asprintf ( &snisliname, "%u", tmpPckgObj.gid );
-
-                                                    std::string snisliGidStr ( snisliname );
-                                                    if ( snisliname )
-                                                        free ( snisliname );
-                                                    snisliname = NULL;
-
-                                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
-                                                }
-                                            }
-
-                                            pckgGrpLst.clear();
-
-
-                                            line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
-                                            tmpDestStro.assign ( line );
-                                            foundn = tmpDestStro.find ( "," );
                                         }
 
-                                        pthread_mutex_unlock ( &count_mutex );
-                                    }
-                                    else if ( srvValStrs["dw-restrict:"].find ( "add" ) != std::string::npos )
-                                    {
-                                        pthread_mutex_lock ( &count_mutex );
-
-                                        std::string tmpDestStro;
-                                        tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
-
-                                        size_t foundn = tmpDestStro.find ( "," );
-                                        while ( foundn != std::string::npos )
+                                        if ( srvValStrs["dw-message:"].find ( "Success" ) && srvValStrs["dw-error:"].find ( "0" ) )
                                         {
-                                            std::string line;
-                                            unsigned long long pckgqta = 0;
-                                            int sscanfrslt = 0;
-
-                                            line.assign ( tmpDestStro,0,foundn );
-
-                                            std::list<PckgObj> pckgGrpLst;
-                                            size_t foundspc = line.find ( " " );
-                                            while ( foundspc != std::string::npos && sscanfrslt < 2 )
+                                            if ( srvValStrs["dw-restrict:"].find ( "no" ) != std::string::npos )
                                             {
-                                                char pckgname[128] = {'\0'};
-                                                sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-                                                if ( sscanfrslt == 2 )
-                                                {
-                                                    if ( strlen ( pckgname ) > 4 )
-                                                    {
-                                                        PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
-                                                        pckgGrpLst.push_back ( tmpPckgObj );
-                                                    }
-                                                    break;
-                                                }
-                                                else
-                                                {
-                                                    sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
-                                                    if ( sscanfrslt == 1 )
-                                                    {
-                                                        std::string subline;
-                                                        subline.assign ( line, 0, foundspc );
-                                                        if ( subline.size() > 4 )
-                                                        {
-                                                            PckgObj tmpPckgObj ( subline, 0, 0, 0 );
-                                                            pckgGrpLst.push_back ( tmpPckgObj );
-                                                        }
-                                                        subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
-                                                        line.assign ( subline );
-                                                        foundspc = line.find ( " " );
-                                                    }
-                                                }
-                                            }
+                                                pthread_mutex_lock ( &count_mutex );
 
-                                            unsigned int groupid = 0;
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
-                                                pcgSetit->clq = pckgqta;
-                                                for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
-                                                {
-                                                    size_t found_srvpckg = it->package.find ( pcgSetit->package );
-                                                    if ( found_srvpckg != std::string::npos )
-                                                    {
-                                                        pcgSetit->uid = it->uid;
-                                                        groupid = it->uid;
-                                                        break;
-                                                    }
-                                                }
-                                            }
-
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
-                                                pcgSetit->gid = groupid;
-                                                PckgObj tmpPckgObj ( *pcgSetit );
-                                                regPckgObjLst.push_back ( tmpPckgObj );
-
-                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
-                                                {
-
-                                                    if ( tmpPckgObj.gid == tmpPckgObj.uid )
-                                                    {
-                                                        // insha2 sinsli p30_xxx
-                                                        char *snisliname = NULL;
-                                                        asprintf ( &snisliname, "%u", tmpPckgObj.gid );
-                                                        std::string snisliGidStr ( snisliname );
-                                                        if ( snisliname )
-                                                            free ( snisliname );
-                                                        snisliname = NULL;
-
-                                                        asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
-
-                                                        std::string snisliQuotaStr ( snisliname );
-                                                        if ( snisliname )
-                                                            free ( snisliname );
-                                                        snisliname = NULL;
-
-
-                                                        reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
-
-                                                        fullCmd4.clear();
-                                                        fullCmd4.append ( IPTABLES_PATH );
-                                                        fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
-                                                        reslt |= system_nosh ( fullCmd4.c_str() );
-
-                                                        fullCmd6.clear();
-                                                        fullCmd6.append ( IP6TABLES_PATH );
-                                                        fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
-                                                        reslt |= system_nosh ( fullCmd6.c_str() );
-
-                                                        reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
-
-                                                    }
-                                                }
-                                            }
-
-
-                                            /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
-                                                PckgObj tmpPckgObj ( *pcgSetit );
-                                                if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
-                                                {
-                                                    char *snisliname = NULL;
-                                                    asprintf ( &snisliname, "%u", tmpPckgObj.uid );
-                                                    std::string snisliUidStr ( snisliname );
-                                                    if ( snisliname )
-                                                        free ( snisliname );
-                                                    snisliname = NULL;
-
-                                                    asprintf ( &snisliname, "%u", tmpPckgObj.gid );
-
-                                                    std::string snisliGidStr ( snisliname );
-                                                    if ( snisliname )
-                                                        free ( snisliname );
-                                                    snisliname = NULL;
-
-                                                    reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
-                                                }
-                                            }
-
-                                            pckgGrpLst.clear();
-
-
-                                            line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
-                                            tmpDestStro.assign ( line );
-                                            foundn = tmpDestStro.find ( "," );
-                                        }
-
-                                        pthread_mutex_unlock ( &count_mutex );
-                                    }
-                                    else if ( srvValStrs["dw-restrict:"].find ( "rem" ) != std::string::npos )
-                                    {
-                                        pthread_mutex_lock ( &count_mutex );
-
-                                        std::string tmpDestStro;
-                                        tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
-
-                                        size_t foundn = tmpDestStro.find ( "," );
-                                        while ( foundn != std::string::npos )
-                                        {
-                                            std::string line;
-                                            unsigned long long pckgqta = 0;
-                                            int sscanfrslt = 0;
-                                            unsigned int groupid = 0;
-                                            line.assign ( tmpDestStro,0,foundn );
-
-                                            std::list<PckgObj> pckgGrpLst;
-                                            size_t foundspc = line.find ( " " );
-                                            while ( foundspc != std::string::npos && sscanfrslt < 2 )
-                                            {
-                                                char pckgname[128] = {'\0'};
-                                                sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
-                                                if ( sscanfrslt == 2 )
-                                                {
-                                                    PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
-                                                    pckgGrpLst.push_back ( tmpPckgObj );
-                                                    break;
-                                                }
-                                                else
-                                                {
-                                                    sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
-                                                    if ( sscanfrslt == 1 )
-                                                    {
-                                                        std::string subline;
-                                                        subline.assign ( line, 0, foundspc );
-                                                        PckgObj tmpPckgObj ( subline, 0, 0, 0 );
-                                                        pckgGrpLst.push_back ( tmpPckgObj );
-                                                        subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
-                                                        line.assign ( subline );
-                                                        foundspc = line.find ( " " );
-                                                    }
-                                                }
-                                            }
-
-                                            std::set<std::string> chnXSet; // guarantee -F before -X
-                                            for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
-                                            {
+                                                /// triva da bide set, guarantees -F avant -X
+                                                std::set<std::string> chnXSet;
                                                 for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
                                                 {
-                                                    size_t found_srvpckg = it->package.find ( pcgSetit->package );
-                                                    if ( found_srvpckg != std::string::npos )
+                                                    if ( it->uid > 0 )
                                                     {
-                                                        if ( it->uid > 0 )
+                                                        if ( it->gid == it->uid )
                                                         {
-                                                            if ( it->gid == it->uid )
-                                                            {
-                                                                groupid = it->gid;
+                                                            char * tmpStro = NULL;
+                                                            asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                            reslt |= commonIpCmd ( tmpStro );
 
-                                                                char * tmpStro = NULL;
-                                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                                reslt |= commonIpCmd ( tmpStro );
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
 
-                                                                if ( tmpStro )
-                                                                    free ( tmpStro );
-                                                                tmpStro = NULL;
+                                                            asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                            chnXSet.insert ( tmpStro );
 
-                                                                asprintf ( &tmpStro," -F p30_%u", it->gid );
-                                                                chnXSet.insert ( tmpStro );
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
 
-                                                                if ( tmpStro )
-                                                                    free ( tmpStro );
-                                                                tmpStro = NULL;
 
-                                                                asprintf ( &tmpStro," -X p30_%u", it->gid );
-                                                                chnXSet.insert ( tmpStro );
+                                                            asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                            chnXSet.insert ( tmpStro );
 
-                                                                if ( tmpStro )
-                                                                    free ( tmpStro );
-                                                                tmpStro = NULL;
-                                                            }
-                                                            else
-                                                            {
-                                                                char * tmpStro = NULL;
-                                                                asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
-                                                                reslt |= commonIpCmd ( tmpStro );
-
-                                                                if ( tmpStro )
-                                                                    free ( tmpStro );
-                                                                tmpStro = NULL;
-                                                            }
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
                                                         }
+                                                        else
+                                                        {
+                                                            char * tmpStro = NULL;
+                                                            asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                            reslt |= commonIpCmd ( tmpStro );
 
-                                                        regPckgObjLst.erase ( it );
-                                                        break;
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
+                                                        }
                                                     }
                                                 }
 
-                                            }
-
-                                            bool grpUsd = false;
-                                            for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
-                                            {
-                                                if ( it->gid == groupid )
-                                                {
-                                                    grpUsd = true;
-                                                    break;
-                                                }
-
-                                            }
-
-                                            if ( !grpUsd &&  groupid != 0 )
-                                            {
                                                 for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
                                                 {
                                                     reslt |= commonIpCmd ( *it );
                                                 }
+
+                                                chnXSet.clear();
+                                                regPckgObjLst.clear();
+
+                                                reslt |= commonIpCmd ( " -F p30dw" );
+
+                                                reslt |= commonIpCmd ( " -I p30dw 1 --jump ACCEPT" );
+
+                                                pthread_mutex_unlock ( &count_mutex );
+                                            }
+                                            else if ( srvValStrs["dw-restrict:"].find ( "new" ) != std::string::npos )
+                                            {
+                                                /// remove previous data
+                                                pthread_mutex_lock ( &count_mutex );
+
+                                                std::set<std::string> chnXSet;
+                                                for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                                {
+                                                    LOGD ( " -- -- -- %s:%d -- package:%s, uid:%u, gid:%u, clq:%llu", __func__, __LINE__, it->package.c_str(), it->uid, it->gid, it->clq );
+                                                    if ( it-> uid > 0 )
+                                                    {
+                                                        if ( it->gid == it->uid )
+                                                        {
+                                                            char * tmpStro = NULL;
+                                                            asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                            reslt |= commonIpCmd ( tmpStro );
+
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
+
+                                                            asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                            chnXSet.insert ( tmpStro );
+
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
+
+
+                                                            asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                            chnXSet.insert ( tmpStro );
+
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
+                                                        }
+                                                        else
+                                                        {
+                                                            char * tmpStro = NULL;
+                                                            asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                            reslt |= commonIpCmd ( tmpStro );
+
+                                                            if ( tmpStro )
+                                                                free ( tmpStro );
+                                                            tmpStro = NULL;
+                                                        }
+                                                    }
+                                                }
+
+                                                for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
+                                                {
+                                                    reslt |= commonIpCmd ( *it );
+                                                }
+
+                                                chnXSet.clear();
+                                                regPckgObjLst.clear();
+
+                                                std::string tmpDestStro;
+                                                tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
+
+                                                size_t foundn = tmpDestStro.find ( "," );
+                                                while ( foundn != std::string::npos )
+                                                {
+                                                    std::string line;
+                                                    unsigned long long pckgqta = 0;
+                                                    int sscanfrslt = 0;
+
+                                                    line.assign ( tmpDestStro,0,foundn );
+
+                                                    std::list<PckgObj> pckgGrpLst;
+                                                    size_t foundspc = line.find ( " " );
+                                                    while ( foundspc != std::string::npos && sscanfrslt < 2 )
+                                                    {
+                                                        char pckgname[128] = {'\0'};
+                                                        sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                                        if ( sscanfrslt == 2 )
+                                                        {
+                                                            if ( strlen ( pckgname ) > 4 )
+                                                            {
+                                                                PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                                pckgGrpLst.push_back ( tmpPckgObj );
+                                                            }
+                                                            break;
+                                                        }
+                                                        else
+                                                        {
+                                                            sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
+                                                            if ( sscanfrslt == 1 )
+                                                            {
+                                                                std::string subline;
+                                                                subline.assign ( line, 0, foundspc );
+                                                                if ( subline.size() > 4 )
+                                                                {
+                                                                    PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                                }
+                                                                subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
+                                                                line.assign ( subline );
+                                                                foundspc = line.find ( " " );
+                                                            }
+                                                        }
+                                                    }
+
+                                                    unsigned int groupid = 0;
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        pcgSetit->clq = pckgqta;
+                                                        for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                                        {
+                                                            size_t found_srvpckg = it->package.find ( pcgSetit->package );
+                                                            if ( found_srvpckg != std::string::npos )
+                                                            {
+                                                                pcgSetit->uid = it->uid;
+                                                                groupid = it->uid;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        pcgSetit->gid = groupid;
+                                                        PckgObj tmpPckgObj ( *pcgSetit );
+                                                        LOGD ( " -- -- -- %s:%d -- package:%s, uid:%u, gid:%u, clq:%llu", __func__, __LINE__, tmpPckgObj.package.c_str(), tmpPckgObj.uid, tmpPckgObj.gid, tmpPckgObj.clq );
+                                                        regPckgObjLst.push_back ( tmpPckgObj );
+
+                                                        if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                                                        {
+
+                                                            if ( tmpPckgObj.gid == tmpPckgObj.uid )
+                                                            {
+                                                                // insha2 sinsli p30_xxx
+                                                                char *snisliname = NULL;
+                                                                asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+                                                                std::string snisliGidStr ( snisliname );
+                                                                if ( snisliname )
+                                                                    free ( snisliname );
+                                                                snisliname = NULL;
+
+                                                                asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
+
+                                                                std::string snisliQuotaStr ( snisliname );
+                                                                if ( snisliname )
+                                                                    free ( snisliname );
+                                                                snisliname = NULL;
+
+
+                                                                reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
+
+                                                                fullCmd4.clear();
+                                                                fullCmd4.append ( IPTABLES_PATH );
+                                                                fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
+                                                                reslt |= system_nosh ( fullCmd4.c_str() );
+
+                                                                fullCmd6.clear();
+                                                                fullCmd6.append ( IP6TABLES_PATH );
+                                                                fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
+                                                                reslt |= system_nosh ( fullCmd6.c_str() );
+
+                                                                reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
+
+                                                            }
+                                                        }
+                                                    }
+
+
+                                                    /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        PckgObj tmpPckgObj ( *pcgSetit );
+                                                        if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                                                        {
+                                                            char *snisliname = NULL;
+                                                            asprintf ( &snisliname, "%u", tmpPckgObj.uid );
+                                                            std::string snisliUidStr ( snisliname );
+                                                            if ( snisliname )
+                                                                free ( snisliname );
+                                                            snisliname = NULL;
+
+                                                            asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+
+                                                            std::string snisliGidStr ( snisliname );
+                                                            if ( snisliname )
+                                                                free ( snisliname );
+                                                            snisliname = NULL;
+
+                                                            reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
+                                                        }
+                                                    }
+
+                                                    pckgGrpLst.clear();
+
+
+                                                    line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
+                                                    tmpDestStro.assign ( line );
+                                                    foundn = tmpDestStro.find ( "," );
+                                                }
+
+                                                pthread_mutex_unlock ( &count_mutex );
+                                            }
+                                            else if ( srvValStrs["dw-restrict:"].find ( "add" ) != std::string::npos )
+                                            {
+                                                pthread_mutex_lock ( &count_mutex );
+
+                                                std::string tmpDestStro;
+                                                tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
+
+                                                size_t foundn = tmpDestStro.find ( "," );
+                                                while ( foundn != std::string::npos )
+                                                {
+                                                    std::string line;
+                                                    unsigned long long pckgqta = 0;
+                                                    int sscanfrslt = 0;
+
+                                                    line.assign ( tmpDestStro,0,foundn );
+
+                                                    std::list<PckgObj> pckgGrpLst;
+                                                    size_t foundspc = line.find ( " " );
+                                                    while ( foundspc != std::string::npos && sscanfrslt < 2 )
+                                                    {
+                                                        char pckgname[128] = {'\0'};
+                                                        sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                                        if ( sscanfrslt == 2 )
+                                                        {
+                                                            if ( strlen ( pckgname ) > 4 )
+                                                            {
+                                                                PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                                pckgGrpLst.push_back ( tmpPckgObj );
+                                                            }
+                                                            break;
+                                                        }
+                                                        else
+                                                        {
+                                                            sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
+                                                            if ( sscanfrslt == 1 )
+                                                            {
+                                                                std::string subline;
+                                                                subline.assign ( line, 0, foundspc );
+                                                                if ( subline.size() > 4 )
+                                                                {
+                                                                    PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                                    pckgGrpLst.push_back ( tmpPckgObj );
+                                                                }
+                                                                subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
+                                                                line.assign ( subline );
+                                                                foundspc = line.find ( " " );
+                                                            }
+                                                        }
+                                                    }
+
+                                                    unsigned int groupid = 0;
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        pcgSetit->clq = pckgqta;
+                                                        for ( std::list<PckgObj>::iterator it = mPckgObjLst.begin(); it != mPckgObjLst.end(); ++it )
+                                                        {
+                                                            size_t found_srvpckg = it->package.find ( pcgSetit->package );
+                                                            if ( found_srvpckg != std::string::npos )
+                                                            {
+                                                                pcgSetit->uid = it->uid;
+                                                                groupid = it->uid;
+                                                                break;
+                                                            }
+                                                        }
+                                                    }
+
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        pcgSetit->gid = groupid;
+                                                        PckgObj tmpPckgObj ( *pcgSetit );
+                                                        regPckgObjLst.push_back ( tmpPckgObj );
+
+                                                        if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                                                        {
+
+                                                            if ( tmpPckgObj.gid == tmpPckgObj.uid )
+                                                            {
+                                                                // insha2 sinsli p30_xxx
+                                                                char *snisliname = NULL;
+                                                                asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+                                                                std::string snisliGidStr ( snisliname );
+                                                                if ( snisliname )
+                                                                    free ( snisliname );
+                                                                snisliname = NULL;
+
+                                                                asprintf ( &snisliname, "%llu", ( tmpPckgObj.clq<<10 ) );
+
+                                                                std::string snisliQuotaStr ( snisliname );
+                                                                if ( snisliname )
+                                                                    free ( snisliname );
+                                                                snisliname = NULL;
+
+
+                                                                reslt |= commonIpCmd ( " -N p30_" + snisliGidStr );
+
+                                                                fullCmd4.clear();
+                                                                fullCmd4.append ( IPTABLES_PATH );
+                                                                fullCmd4.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp-net-prohibited" );
+                                                                reslt |= system_nosh ( fullCmd4.c_str() );
+
+                                                                fullCmd6.clear();
+                                                                fullCmd6.append ( IP6TABLES_PATH );
+                                                                fullCmd6.append ( " -A p30_" + snisliGidStr + " -m quota2 ! --quota " + snisliQuotaStr + " --name p30_" + snisliGidStr + " --jump REJECT --reject-with icmp6-adm-prohibited" );
+                                                                reslt |= system_nosh ( fullCmd6.c_str() );
+
+                                                                reslt |= commonIpCmd ( " -A p30_" + snisliGidStr + " --jump ACCEPT" );
+
+                                                            }
+                                                        }
+                                                    }
+
+
+                                                    /// tozi ftori loop e da garantireme che chains sa created viv gorneya loop
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        PckgObj tmpPckgObj ( *pcgSetit );
+                                                        if ( tmpPckgObj.uid > 0 )  //znatshe ima takif package
+                                                        {
+                                                            char *snisliname = NULL;
+                                                            asprintf ( &snisliname, "%u", tmpPckgObj.uid );
+                                                            std::string snisliUidStr ( snisliname );
+                                                            if ( snisliname )
+                                                                free ( snisliname );
+                                                            snisliname = NULL;
+
+                                                            asprintf ( &snisliname, "%u", tmpPckgObj.gid );
+
+                                                            std::string snisliGidStr ( snisliname );
+                                                            if ( snisliname )
+                                                                free ( snisliname );
+                                                            snisliname = NULL;
+
+                                                            reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_" + snisliGidStr );
+                                                        }
+                                                    }
+
+                                                    pckgGrpLst.clear();
+
+
+                                                    line.assign ( tmpDestStro, foundn +1 , tmpDestStro.size() - line.size() - 1 );
+                                                    tmpDestStro.assign ( line );
+                                                    foundn = tmpDestStro.find ( "," );
+                                                }
+
+                                                pthread_mutex_unlock ( &count_mutex );
+                                            }
+                                            else if ( srvValStrs["dw-restrict:"].find ( "rem" ) != std::string::npos )
+                                            {
+                                                pthread_mutex_lock ( &count_mutex );
+
+                                                std::string tmpDestStro;
+                                                tmpDestStro.assign ( trimLdWSpce ( srvValStrs["dw-usageinfo:"] ) );
+
+                                                size_t foundn = tmpDestStro.find ( "," );
+                                                while ( foundn != std::string::npos )
+                                                {
+                                                    std::string line;
+                                                    unsigned long long pckgqta = 0;
+                                                    int sscanfrslt = 0;
+                                                    unsigned int groupid = 0;
+                                                    line.assign ( tmpDestStro,0,foundn );
+
+                                                    std::list<PckgObj> pckgGrpLst;
+                                                    size_t foundspc = line.find ( " " );
+                                                    while ( foundspc != std::string::npos && sscanfrslt < 2 )
+                                                    {
+                                                        char pckgname[128] = {'\0'};
+                                                        sscanfrslt = sscanf ( line.c_str(),"%s %llu", pckgname, &pckgqta );
+                                                        if ( sscanfrslt == 2 )
+                                                        {
+                                                            PckgObj tmpPckgObj ( pckgname, 0, 0, 0 );
+                                                            pckgGrpLst.push_back ( tmpPckgObj );
+                                                            break;
+                                                        }
+                                                        else
+                                                        {
+                                                            sscanfrslt = sscanf ( line.c_str(),"%s", pckgname );
+                                                            if ( sscanfrslt == 1 )
+                                                            {
+                                                                std::string subline;
+                                                                subline.assign ( line, 0, foundspc );
+                                                                PckgObj tmpPckgObj ( subline, 0, 0, 0 );
+                                                                pckgGrpLst.push_back ( tmpPckgObj );
+                                                                subline.assign ( line, foundspc + 1 , line.size() - subline.size() - 1 );
+                                                                line.assign ( subline );
+                                                                foundspc = line.find ( " " );
+                                                            }
+                                                        }
+                                                    }
+
+                                                    std::set<std::string> chnXSet; // guarantee -F before -X
+                                                    for ( std::list<PckgObj>::iterator pcgSetit = pckgGrpLst.begin(); pcgSetit != pckgGrpLst.end(); ++pcgSetit )
+                                                    {
+                                                        for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                                        {
+                                                            size_t found_srvpckg = it->package.find ( pcgSetit->package );
+                                                            if ( found_srvpckg != std::string::npos )
+                                                            {
+                                                                if ( it->uid > 0 )
+                                                                {
+                                                                    if ( it->gid == it->uid )
+                                                                    {
+                                                                        groupid = it->gid;
+
+                                                                        char * tmpStro = NULL;
+                                                                        asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                                        reslt |= commonIpCmd ( tmpStro );
+
+                                                                        if ( tmpStro )
+                                                                            free ( tmpStro );
+                                                                        tmpStro = NULL;
+
+                                                                        asprintf ( &tmpStro," -F p30_%u", it->gid );
+                                                                        chnXSet.insert ( tmpStro );
+
+                                                                        if ( tmpStro )
+                                                                            free ( tmpStro );
+                                                                        tmpStro = NULL;
+
+                                                                        asprintf ( &tmpStro," -X p30_%u", it->gid );
+                                                                        chnXSet.insert ( tmpStro );
+
+                                                                        if ( tmpStro )
+                                                                            free ( tmpStro );
+                                                                        tmpStro = NULL;
+                                                                    }
+                                                                    else
+                                                                    {
+                                                                        char * tmpStro = NULL;
+                                                                        asprintf ( &tmpStro," -D p30dw -m owner --uid-owner %u --jump p30_%u", it->uid, it->gid );
+                                                                        reslt |= commonIpCmd ( tmpStro );
+
+                                                                        if ( tmpStro )
+                                                                            free ( tmpStro );
+                                                                        tmpStro = NULL;
+                                                                    }
+                                                                }
+
+                                                                regPckgObjLst.erase ( it );
+                                                                break;
+                                                            }
+                                                        }
+
+                                                    }
+
+                                                    bool grpUsd = false;
+                                                    for ( std::list<PckgObj>::iterator it = regPckgObjLst.begin(); it != regPckgObjLst.end(); ++it )
+                                                    {
+                                                        if ( it->gid == groupid )
+                                                        {
+                                                            grpUsd = true;
+                                                            break;
+                                                        }
+
+                                                    }
+
+                                                    if ( !grpUsd &&  groupid != 0 )
+                                                    {
+                                                        for ( std::set<std::string>::iterator it = chnXSet.begin(); it != chnXSet.end(); ++it )
+                                                        {
+                                                            reslt |= commonIpCmd ( *it );
+                                                        }
+                                                    }
+
+                                                    chnXSet.clear();
+
+                                                    pckgGrpLst.clear();
+
+
+                                                    line.assign ( tmpDestStro, foundn + 1 , tmpDestStro.size() - line.size() - 1 );
+                                                    tmpDestStro.assign ( line );
+                                                    foundn = tmpDestStro.find ( "," );
+                                                }
+
+                                                pthread_mutex_unlock ( &count_mutex );
                                             }
 
-                                            chnXSet.clear();
-
-                                            pckgGrpLst.clear();
-
-
-                                            line.assign ( tmpDestStro, foundn + 1 , tmpDestStro.size() - line.size() - 1 );
-                                            tmpDestStro.assign ( line );
-                                            foundn = tmpDestStro.find ( "," );
                                         }
 
-                                        pthread_mutex_unlock ( &count_mutex );
                                     }
 
                                 }
+                                else
+                                {
+                                    LOGE ( " ## ## %s , curl_easy_init failed " , __func__ );
 
+                                    if ( chunk.memory )
+                                        free ( chunk.memory );
+                                    chunk.memory = NULL;
+                                    if ( bodyChunk.memory )
+                                        free ( bodyChunk.memory );
+                                    bodyChunk.memory = NULL;
+
+                                    if ( postrequest )
+                                        free ( postrequest );
+                                    postrequest = NULL;
+                                    if ( response )
+                                        free ( response );
+                                    response = NULL;
+
+                                    curl_global_cleanup();
+                                }
                             }
-
-                        }
-                        else
-                        {
-                            LOGE ( " ## ## %s , curl_easy_init failed " , __func__ );
-
-                            if ( chunk.memory )
-                                free ( chunk.memory );
-                            chunk.memory = NULL;
-                            if ( bodyChunk.memory )
-                                free ( bodyChunk.memory );
-                            bodyChunk.memory = NULL;
-
-                            if ( postrequest )
-                                free ( postrequest );
-                            postrequest = NULL;
-                            if ( response )
-                                free ( response );
-                            response = NULL;
-
-                            curl_global_cleanup();
                         }
                     }
+
+                    cnfgdtcounter++ ;
+                    usleep ( 50000000 );
                 }
+
             }
 
         }
