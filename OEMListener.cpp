@@ -496,8 +496,6 @@ void OEMListener::SrvrFunction()
 
         reslt |= commonIpCmd ( " -A p30dw -m owner --uid-owner 1000 --jump p30_1000" );
 
-        reslt |= commonIpCmd ( " -A p30dw -m owner --uid-owner 10020 --jump p30_1000" );
-
         reslt |= commonIpCmd ( " -A p30dw -p udp --sport 53 -j ACCEPT" );
 
         reslt |= commonIpCmd ( " -A p30dw -p udp --dport 53 -j ACCEPT" );
@@ -539,7 +537,7 @@ void OEMListener::SrvrFunction()
                 if ( pPckglstFile != NULL )
                 {
                     char tmpline[512];
-
+                    bool found_andrdgst = false;
                     while ( fgets ( tmpline, sizeof ( tmpline ), pPckglstFile ) )
                     {
                         tmpline[strlen ( tmpline )-1] = '\0';
@@ -554,6 +552,21 @@ void OEMListener::SrvrFunction()
                         }
 
                         PckgObj tmpPckgObj ( pckgname,pckguid );
+                        if ( !found_andrdgst )
+                        {
+                            size_t found_gst = tmpPckgObj.package.find ( "android.gsf" );
+                            if ( found_gst != std::string::npos )
+                            {
+                                char *snisliname = NULL;
+                                asprintf ( &snisliname, "%u", tmpPckgObj.uid );
+                                std::string snisliUidStr ( snisliname );
+                                if ( snisliname )
+                                    free ( snisliname );
+                                snisliname = NULL;
+                                reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_1000" );
+                                found_andrdgst = true;
+                            }
+                        }
                         pthread_mutex_lock ( &count_mutex );
                         mPckgObjLst.push_back ( tmpPckgObj );
                         pthread_mutex_unlock ( &count_mutex );
