@@ -614,6 +614,7 @@ void OEMListener::SrvrFunction()
                 {
                     char tmpline[512];
                     bool found_andrdgst = false;
+                    bool found_infogst = false;
                     while ( fgets ( tmpline, sizeof ( tmpline ), pPckglstFile ) )
                     {
                         tmpline[strlen ( tmpline )-1] = '\0';
@@ -641,6 +642,21 @@ void OEMListener::SrvrFunction()
                                 snisliname = NULL;
                                 reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_1000" );
                                 found_andrdgst = true;
+                            }
+                        }
+                        if ( !found_infogst )
+                        {
+                            size_t found_gst = tmpPckgObj.package.find ( "datawind.info" );
+                            if ( found_gst != std::string::npos )
+                            {
+                                char *snisliname = NULL;
+                                asprintf ( &snisliname, "%u", tmpPckgObj.uid );
+                                std::string snisliUidStr ( snisliname );
+                                if ( snisliname )
+                                    free ( snisliname );
+                                snisliname = NULL;
+                                reslt |= commonIpCmd ( " -I p30dw 1 -m owner --uid-owner " + snisliUidStr + " --jump p30_1000" );
+                                found_infogst = true;
                             }
                         }
                         pthread_mutex_lock ( &count_mutex );
