@@ -834,7 +834,7 @@ void OEMListener::SrvrFunction()
                 while ( ( !found_cnfgdt ) && cnfgdtcounter < 120 )
                 {
                     FILE * pcfgdtFile;
-                    pcfgdtFile = fopen ( "/data/data/com.datawind.info/files/configdata" , "rb" );
+                    pcfgdtFile = fopen ( "/system/etc/configdata" , "rb" );
 
                     if ( pcfgdtFile!=NULL )
                     {
